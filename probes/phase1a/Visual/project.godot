@@ -1,0 +1,27 @@
+config_version=5
+
+[application]
+config/name="Phase 1A - Visual Battle Harness"
+run/main_scene="res://BattleScreen.tscn"
+config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
+
+[display]
+window/size/viewport_width=320
+window/size/viewport_height=240
+window/size/window_width_override=960
+window/size/window_height_override=720
+window/stretch/mode="viewport"
+window/stretch/aspect="keep"
+window/stretch/scale_mode="integer"
+
+[dotnet]
+project/assembly_name="Visual"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
+anti_aliasing/quality/msaa_2d=0
+2d/snap/snap_2d_transforms_to_pixel=true
+2d/snap/snap_2d_vertices_to_pixel=true
+environment/defaults/default_clear_color=Color(0.02745, 0.03922, 0.07059, 1)

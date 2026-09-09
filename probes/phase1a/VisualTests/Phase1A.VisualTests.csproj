@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Probe/Phase1A.Probe.csproj" />
+    <Compile Include="../Visual/Presentation/*.cs" Link="Presentation/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
