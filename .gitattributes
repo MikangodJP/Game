@@ -1,0 +1,2 @@
+probes/phase1a/golden/*.log text eol=lf
+probes/phase1a/golden/archive/*.log text eol=lf
