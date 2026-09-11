@@ -87,30 +87,59 @@ public partial class BattleScreen
             await Choose("ITEMS"); await Choose("Equipment Quick Use");
             Check(ui.Mode == ScreenMode.Wip && ui.Preparation.InBattle, "ITEMS equipment-named leaf remains WIP and cannot equip");
             await Press(Key.Enter); await Press(Key.Escape);
-            await Choose("MAGIC"); await Capture(outputDirectory, "02-magic-grid"); await Press(Key.Escape);
-            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            await Choose("MAGIC");
+            Check(ui.Menu.CurrentEntries.Select(entry => entry.Label).SequenceEqual(["CHANTLESS", "CHANT", "Back"]),
+                "Battle Magic first displays Chantless and Chant");
+            await Capture(outputDirectory, "02-magic-methods");
+            await Choose("CHANT");
+            Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "CHANT" &&
+                ui.WipMessage == "Chanted magic is not implemented yet.",
+                "Chant opens the exact passive WIP message");
+            await Capture(outputDirectory, "02-chant-wip");
+            await Press(Key.Enter);
+            await Choose("CHANTLESS");
+            Check(ui.Menu.CurrentEntries.Any(entry => entry.Label == "TRANSFORMATION MAGIC"),
+                "Chantless contains the complete existing Magic taxonomy");
+            await Capture(outputDirectory, "02-chantless-grid");
+            await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            Check(ui.Mode == ScreenMode.MagicAdjustment && ui.Breadcrumb == "CHANTLESS > FIREBALL",
+                "Elemental Fire opens the Battle cast adjustment");
+            var initialMagic = ui.MagicAdjustment!;
+            Check(initialMagic.Method == "CHANTLESS" && initialMagic.BaseMagic == "FIREBALL" &&
+                initialMagic.SizeMultiplier == "1.00" && initialMagic.OutputMultiplier == "1.00" &&
+                initialMagic.MpCost == 4 && initialMagic.CurrentMp == 12,
+                "Battle adjustment starts from the default Fireball configuration and central cost");
+            var emptyFifthSizeStep = await PixelAt(89, 100);
+            await Press(Key.Right); await Press(Key.Down); await Press(Key.Right);
+            var editedMagic = ui.MagicAdjustment!;
+            Check(editedMagic.SizeMultiplier == "1.25" && editedMagic.OutputMultiplier == "1.25" &&
+                editedMagic.MpCost == 6, "Battle arrows edit exact quarter steps and recalculate MP cost");
+            Check(await PixelAt(89, 100) != emptyFifthSizeStep,
+                "the Battle Size slider visibly fills its fifth step");
+            await CaptureMagicAdjustment(outputDirectory, "02-magic-adjustment");
+            await Press(Key.Down); await Press(Key.Enter);
             Check(ui.Mode == ScreenMode.Targets && ui.Breadcrumb == "FIREBALL > CHOOSE TARGET",
-                "Magic / Elemental / Fire opens Fireball targeting");
+                "Cast opens the shared Fireball target screen");
             await Capture(outputDirectory, "02-fire-target");
             await Press(Key.Backspace);
-            Check(ui.Mode == ScreenMode.Menu && ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label == "Fire" &&
+            Check(ui.Mode == ScreenMode.MagicAdjustment && ui.MagicAdjustment is { SizeSteps: 5, OutputSteps: 5 } &&
                 ui.Session.MachineText == untouched && ui.Session.View.Hero.Mp == 12,
-                "Fireball target Back preserves the leaf without a turn or MP cost");
+                "Fireball target Back preserves the draft without a turn or MP cost");
             await Press(Key.Escape); await Press(Key.Escape);
-            await Choose("MAGIC"); await Choose("TRANSFORMATION MAGIC"); await Choose("Self Transformation");
+            await Choose("TRANSFORMATION MAGIC"); await Choose("Self Transformation");
             Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Self Transformation",
                 "Transformation Magic remains a separate WIP taxonomy");
             await Capture(outputDirectory, "02-transformation-wip");
-            await Press(Key.Backspace); await Press(Key.Escape); await Press(Key.Escape);
+            await Press(Key.Backspace); await Press(Key.Escape); await Press(Key.Escape); await Press(Key.Escape);
             await Choose("SUMMONING"); await Choose("CREATURE SUMMONING"); await Choose("Dragon");
             Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Dragon", "Summoning / Creature / Dragon WIP");
             await Capture(outputDirectory, "03-dragon-wip");
             await Press(Key.Enter); await Press(Key.Escape); await Choose("Back");
-            await Choose("MAGIC"); await Choose("PRIMORDIAL / ROOT MAGIC");
+            await Choose("MAGIC"); await Choose("CHANTLESS"); await Choose("PRIMORDIAL / ROOT MAGIC");
             await Capture(outputDirectory, "04-root-magic");
             await Choose("Unknown / Forbidden");
             Check(ui.Mode == ScreenMode.Wip, "long submenu scrolls to final deep leaf");
-            await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape);
+            await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape); await Press(Key.Escape);
             Check(ui.Session.MachineText == untouched, "all WIP navigation leaves simulation untouched");
             await Choose("ATTACK");
             await Press(Key.D);
@@ -135,8 +164,10 @@ public partial class BattleScreen
             var fireballFirstEvent = ui.Session.Events.Length;
             var beforeFireballMp = ui.Session.View.Hero.Mp;
             var beforeFireballHp = ui.Session.View.Enemies[0].Hp;
-            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
-            Check(ui.Mode == ScreenMode.Targets, "affordable Fireball reaches the shared target screen");
+            await Choose("MAGIC"); await Choose("CHANTLESS"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            Check(ui.Mode == ScreenMode.MagicAdjustment, "affordable Fireball first reaches Battle adjustment");
+            await Press(Key.Down); await Press(Key.Down); await Press(Key.Enter);
+            Check(ui.Mode == ScreenMode.Targets, "Battle Cast reaches the shared target screen");
             await Press(Key.Enter);
             Check(ui.Mode == ScreenMode.Messages && ui.Session.View.Hero.Mp == beforeFireballMp - 4,
                 "default Fireball deducts exactly four MP once");
@@ -254,5 +285,29 @@ public partial class BattleScreen
         Check(colors.Count <= 32, name + $" limited palette ({colors.Count} colors)");
         var error = frame.SavePng(System.IO.Path.Combine(directory, name + ".png"));
         Check(error == Error.Ok, name + " captured");
+    }
+
+    private async Task CaptureMagicAdjustment(string directory, string name)
+    {
+        await Capture(directory, name);
+        Check(LastMagicAdjustmentBounds == new Rect2I(40, 28, 240, 180),
+            "Magic adjustment stays inside the fixed native viewport bounds");
+        using var frame = GetViewport().GetTexture().GetImage();
+        var black = new Color("000000");
+        var white = new Color("ffffff");
+        var sawBlack = false;
+        var sawWhite = false;
+        var paletteOnly = true;
+        var rect = LastMagicAdjustmentBounds!.Value;
+        for (var y = rect.Position.Y; y < rect.End.Y; y++)
+            for (var x = rect.Position.X; x < rect.End.X; x++)
+            {
+                var color = frame.GetPixel(x, y);
+                sawBlack |= color == black;
+                sawWhite |= color == white;
+                if (color != black && color != white) paletteOnly = false;
+            }
+        Check(paletteOnly && sawBlack && sawWhite,
+            "Magic adjustment uses only literal black and white inside its one-pixel border");
     }
 }

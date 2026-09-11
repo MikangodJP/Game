@@ -52,7 +52,7 @@ internal static class FieldLoopTests
             Check(!game.State.Player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "gear locked during combat");
             game.Handle(UiInput.Restart); game.Handle(UiInput.Back);
             Equal(GameMode.Battle, game.Mode);
-            Choose(game, "MAGIC"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Water");
+            Choose(game, "MAGIC"); Choose(game, "CHANTLESS"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Water");
             Equal(ScreenMode.Wip, game.Harness.Mode);
             Check(!game.StepField(-1, 0), "WIP overlay does not enable field movement");
             Equal(log, session.MachineText);
@@ -72,7 +72,9 @@ internal static class FieldLoopTests
             Equal(70, game.Harness.Session.View.Hero.Hp); Equal(7, game.Harness.Session.View.Hero.Mp);
             Equal(15, game.Harness.Session.View.Hero.EffectiveStats.Strength);
             Equal(12, game.Harness.Session.View.Hero.EffectiveStats.Defense);
-            Choose(game, "MAGIC"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
+            Choose(game, "MAGIC"); Choose(game, "CHANTLESS"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
+            Equal(ScreenMode.MagicAdjustment, game.Harness.Mode);
+            game.Handle(UiInput.Down); game.Handle(UiInput.Down); game.Handle(UiInput.Confirm);
             Equal(ScreenMode.Targets, game.Harness.Mode);
             game.Handle(UiInput.Confirm); FinishMessages(game);
             Equal(1, game.Harness.Session.View.Hero.Mp);

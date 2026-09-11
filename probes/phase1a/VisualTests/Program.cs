@@ -74,18 +74,24 @@ var tests = new (string Name, Action Run)[]
         Equal(12, ui.Preparation.Mp);
         Check(!ui.Preparation.InBattle, "new preparation has no active battle");
     }),
-    ("Fire is the typed Fireball action and Transformation Magic remains intact", () =>
+    ("Battle Magic separates Chantless from Chant and preserves the complete taxonomy", () =>
     {
         var menu = new BattleMenu();
         var magic = menu.Root.Single(entry => entry.Label == "MAGIC");
         var magicChildren = magic.Children ?? throw new Exception("MAGIC children missing");
-        var elemental = magicChildren.Single(entry => entry.Label == "ELEMENTAL MAGIC");
+        Check(magicChildren.Select(entry => entry.Label).SequenceEqual(["CHANTLESS", "CHANT"]),
+            "Battle Magic first separates chantless and chanted methods");
+        var chant = magicChildren.Single(entry => entry.Label == "CHANT");
+        Equal("Chanted magic is not implemented yet.", chant.WipMessage);
+        var chantless = magicChildren.Single(entry => entry.Label == "CHANTLESS");
+        var chantlessChildren = chantless.Children ?? throw new Exception("CHANTLESS children missing");
+        var elemental = chantlessChildren.Single(entry => entry.Label == "ELEMENTAL MAGIC");
         var elementalChildren = elemental.Children ?? throw new Exception("ELEMENTAL MAGIC children missing");
         var fire = elementalChildren.Single(entry => entry.Label == "Fire");
         Equal(MenuAction.Fireball, fire.Action);
         Equal("Fire", fire.Label);
 
-        var transformation = magicChildren.Single(entry => entry.Label == "TRANSFORMATION MAGIC");
+        var transformation = chantlessChildren.Single(entry => entry.Label == "TRANSFORMATION MAGIC");
         var transformationChildren = transformation.Children ?? throw new Exception("TRANSFORMATION MAGIC children missing");
         var expected = new[]
         {
@@ -96,12 +102,28 @@ var tests = new (string Name, Action Run)[]
             "Transformation Magic taxonomy is unchanged");
         Check(transformationChildren.All(entry => entry.Action == MenuAction.None && entry.Children is null),
             "Transformation Magic leaves remain WIP");
+
+        var ui = Started();
+        Choose(ui, "MAGIC"); Choose(ui, "CHANT");
+        Equal(ScreenMode.Wip, ui.Mode);
+        Equal("CHANT", ui.WipLabel);
+        Equal("Chanted magic is not implemented yet.", ui.WipMessage);
+        ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Menu, ui.Mode);
+        Equal("CHANT", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
     }),
     ("Affordable Fire casts the configured Fireball once before normal enemy responses", () =>
     {
         var ui = Started();
         var firstEvent = ui.Session.Events.Length;
-        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Equal(ScreenMode.MagicAdjustment, ui.Mode);
+        var adjustment = ui.MagicAdjustment!;
+        Equal("CHANTLESS", adjustment.Method);
+        Equal("FIREBALL", adjustment.BaseMagic);
+        Equal("1.00", adjustment.SizeMultiplier); Equal("1.00", adjustment.OutputMultiplier);
+        Equal(4, adjustment.MpCost); Equal(12, adjustment.CurrentMp);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
         Equal(ScreenMode.Targets, ui.Mode);
         Equal("FIREBALL > CHOOSE TARGET", ui.Breadcrumb);
         ui.Handle(UiInput.Confirm);
@@ -120,14 +142,17 @@ var tests = new (string Name, Action Run)[]
         Check(ui.Session.LastMessages.Contains("Adventurer casts Fireball on Goblin!"), "domain spell name is visible");
         Check(ui.Session.LastMessages.Contains("Size 1.00 | Output 1.00 | MP 4"), "configuration and exact cost are visible");
     }),
-    ("Unaffordable Fire fails before targeting without spending a turn", () =>
+    ("Unaffordable Cast returns to the same intact adjustment without spending a turn", () =>
     {
         var player = new CharacterPreparation(Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats, mp: 3);
         var session = new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed)));
         var ui = new HarnessController(player, session);
         var beforeLog = session.MachineText;
         var before = session.View;
-        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        ui.Handle(UiInput.Right);
+        Equal(5, ui.MagicAdjustment!.SizeSteps);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
         Equal(ScreenMode.Messages, ui.Mode);
         Check(ui.BattleLines.Contains("Not enough MP."), "visible MP failure");
         Equal(beforeLog, session.MachineText);
@@ -135,23 +160,51 @@ var tests = new (string Name, Action Run)[]
         Check(before.Enemies.SequenceEqual(session.View.Enemies), "enemy state is unchanged");
         Equal(before.Finished, session.View.Finished);
         DismissMessages(ui);
-        ui.Handle(UiInput.Back); ui.Handle(UiInput.Back);
-        Choose(ui, "ATTACK"); ui.Handle(UiInput.Confirm);
-        Equal(ScreenMode.Messages, ui.Mode);
-        Check(session.View.Enemies[0].Hp < before.Enemies[0].Hp,
-            "the same player turn remains usable after the MP failure");
+        Equal(ScreenMode.MagicAdjustment, ui.Mode);
+        Equal(5, ui.MagicAdjustment!.SizeSteps);
+        Equal(2, ui.MagicAdjustment.SelectedIndex);
+        ui.Handle(UiInput.Up); ui.Handle(UiInput.Left);
+        ui.Handle(UiInput.Up); ui.Handle(UiInput.Left); ui.Handle(UiInput.Left);
+        Equal(3, ui.MagicAdjustment.SizeSteps); Equal(3, ui.MagicAdjustment.OutputSteps);
+        Equal(3, ui.MagicAdjustment.MpCost);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Targets, ui.Mode);
     }),
-    ("Fireball target cancellation spends neither MP nor a turn", () =>
+    ("Battle adjustment uses exact quarter steps and Escape discards only its draft", () =>
     {
         var ui = Started();
-        var beforeLog = ui.Session.MachineText;
-        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
-        Equal(ScreenMode.Targets, ui.Mode);
+        Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Equal(ScreenMode.MagicAdjustment, ui.Mode);
+        ui.Handle(UiInput.Right); Equal(5, ui.MagicAdjustment!.SizeSteps); Equal("1.25", ui.MagicAdjustment.SizeMultiplier);
+        for (var i = 0; i < 30; i++) ui.Handle(UiInput.Left);
+        Equal(1, ui.MagicAdjustment.SizeSteps); Equal("0.25", ui.MagicAdjustment.SizeMultiplier);
+        for (var i = 0; i < 30; i++) ui.Handle(UiInput.Right);
+        Equal(16, ui.MagicAdjustment.SizeSteps); Equal("4.00", ui.MagicAdjustment.SizeMultiplier);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Right);
+        Equal(5, ui.MagicAdjustment.OutputSteps); Equal("1.25", ui.MagicAdjustment.OutputMultiplier);
         ui.Handle(UiInput.Back);
         Equal(ScreenMode.Menu, ui.Mode);
         Equal("Fire", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
+        Choose(ui, "Fire");
+        Equal(4, ui.MagicAdjustment!.SizeSteps); Equal(4, ui.MagicAdjustment.OutputSteps);
+    }),
+    ("Fireball target cancellation returns to the intact adjustment without MP or a turn", () =>
+    {
+        var ui = Started();
+        var beforeLog = ui.Session.MachineText;
+        Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        ui.Handle(UiInput.Right); ui.Handle(UiInput.Down); ui.Handle(UiInput.Right);
+        Equal(5, ui.MagicAdjustment!.SizeSteps); Equal(5, ui.MagicAdjustment.OutputSteps);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Targets, ui.Mode);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.MagicAdjustment, ui.Mode);
+        Equal(5, ui.MagicAdjustment!.SizeSteps); Equal(5, ui.MagicAdjustment.OutputSteps);
         Equal(12, ui.Session.View.Hero.Mp);
         Equal(beforeLog, ui.Session.MachineText);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.Menu, ui.Mode);
+        Equal("Fire", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
     }),
     ("Battle adapter uses Output for Fireball damage and Size only for cost", () =>
     {
@@ -175,7 +228,7 @@ var tests = new (string Name, Action Run)[]
         var rootLabels = ui.Menu.Root.Select(e => e.Label).ToArray();
         Check(rootLabels.SequenceEqual(new[] { "ATTACK", "DEFEND", "MAGIC", "SUMMONING", "SKILLS", "SPECIAL", "ITEMS", "TACTICS", "RUN" }), "root hierarchy");
         var paths = LeafPaths(ui.Menu.Root).ToArray();
-        Equal(148, paths.Length);
+        Equal(149, paths.Length);
         foreach (var path in paths)
         {
             while (!ui.Menu.IsRoot) ui.Handle(UiInput.Back);
@@ -212,8 +265,8 @@ var tests = new (string Name, Action Run)[]
     ("WIP browsing cannot consume RNG or affect the next attack", () =>
     {
         var browsed = Started();
-        Choose(browsed, "MAGIC"); Choose(browsed, "ELEMENTAL MAGIC"); Choose(browsed, "Water");
-        browsed.Handle(UiInput.Confirm); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back);
+        Choose(browsed, "MAGIC"); Choose(browsed, "CHANTLESS"); Choose(browsed, "ELEMENTAL MAGIC"); Choose(browsed, "Water");
+        browsed.Handle(UiInput.Confirm); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back);
         Choose(browsed, "ATTACK"); browsed.Handle(UiInput.Confirm);
         var untouched = Started();
         Choose(untouched, "ATTACK"); untouched.Handle(UiInput.Confirm);
@@ -268,7 +321,7 @@ var tests = new (string Name, Action Run)[]
     ("Submenu grids stop at missing cells and preserve parent selection on Back", () =>
     {
         var ui = Started();
-        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC");
+        Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC");
         Equal(2, ui.Menu.Columns);
         ui.Handle(UiInput.Right);
         for (var i = 0; i < 3; i++) ui.Handle(UiInput.Down);
@@ -280,6 +333,8 @@ var tests = new (string Name, Action Run)[]
         ui.Handle(UiInput.Right); Equal(8, ui.Menu.SelectedIndex);
         ui.Handle(UiInput.Confirm);
         Equal("ELEMENTAL MAGIC", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
+        ui.Handle(UiInput.Back);
+        Equal("CHANTLESS", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
         ui.Handle(UiInput.Back);
         Equal("MAGIC", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
         Equal(3, ui.Menu.Columns);

@@ -1,4 +1,5 @@
 using Godot;
+using Phase1A.Magic;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
 
@@ -18,6 +19,10 @@ public partial class BattleScreen : Node2D
     private static readonly Color Ink = new("070a12"), Panel = new("101923"), Border = new("536b71"),
         Paper = new("d6d2ae"), Muted = new("84958d"), Gold = new("dfb963"),
         Red = new("c86959"), Green = new("9eaf74"), Blue = new("819eb5");
+    private static readonly Color MagicInk = new("000000"), MagicPaper = new("ffffff");
+    private static readonly Rect2I MagicAdjustmentRect = new(40, 28, 240, 180);
+    private Rect2I? lastMagicAdjustmentBounds;
+    internal Rect2I? LastMagicAdjustmentBounds => lastMagicAdjustmentBounds;
     private string debugNotice = "F3: SAVE ORIGINAL EVENTS";
 
     public override void _Ready()
@@ -147,6 +152,7 @@ public partial class BattleScreen : Node2D
 
     public override void _Draw()
     {
+        lastMagicAdjustmentBounds = null;
         if (standalone is null && game.Mode is GameMode.Field or GameMode.Menu or GameMode.GameOver) return;
         Fill(0, 0, 320, 240, Ink);
         if (ui.IsPreparing)
@@ -170,6 +176,7 @@ public partial class BattleScreen : Node2D
         Window(8, 204, 304, 32);
         for (var i = 0; i < ui.BattleLines.Count && i < 3; i++)
             Text(ui.BattleLines[i], 14, 209 + i * 8, Paper);
+        if (ui.Mode == ScreenMode.MagicAdjustment) DrawMagicAdjustment();
         if (ui.Mode == ScreenMode.Wip) DrawWip();
         if (ui.Mode == ScreenMode.MachineLog) DrawMachineLog();
     }
@@ -357,10 +364,55 @@ public partial class BattleScreen : Node2D
         Fill(29, 59, 264, 118, Ink);
         Window(25, 55, 268, 118);
         Center("WIP", 159, 67, Gold, 2);
-        var lines = Wrap(ui.WipLabel.ToUpperInvariant(), 39);
+        var lines = Wrap(ui.WipMessage.ToUpperInvariant(), 39);
         for (var i = 0; i < lines.Count; i++) Center(lines[i], 159, 92 + i * 9, Paper);
-        Center("IS NOT IMPLEMENTED.", 159, 122, Muted);
         Center("[ CONTINUE ]", 159, 150, Gold);
+    }
+
+    private void DrawMagicAdjustment()
+    {
+        var view = ui.MagicAdjustment ?? throw new InvalidOperationException("Magic Adjustment needs a view.");
+        var rect = MagicAdjustmentRect;
+        lastMagicAdjustmentBounds = rect;
+        Fill(rect.Position.X, rect.Position.Y, rect.Size.X, rect.Size.Y, MagicInk);
+        Fill(rect.Position.X, rect.Position.Y, rect.Size.X, 1, MagicPaper);
+        Fill(rect.Position.X, rect.End.Y - 1, rect.Size.X, 1, MagicPaper);
+        Fill(rect.Position.X, rect.Position.Y, 1, rect.Size.Y, MagicPaper);
+        Fill(rect.End.X - 1, rect.Position.Y, 1, rect.Size.Y, MagicPaper);
+
+        Center("MAGIC ADJUSTMENT", 160, rect.Position.Y + 8, MagicPaper);
+        Fill(rect.Position.X + 1, rect.Position.Y + 21, rect.Size.X - 2, 1, MagicPaper);
+        MagicPair("METHOD", view.Method, rect.Position.Y + 29);
+        MagicPair("BASE", view.BaseMagic, rect.Position.Y + 41);
+        MagicRow("SIZE", view.SizeMultiplier, view.SizeSteps, 0, rect.Position.Y + 59);
+        MagicRow("OUTPUT", view.OutputMultiplier, view.OutputSteps, 1, rect.Position.Y + 91);
+        Center($"MP COST {view.MpCost}   CURRENT {view.CurrentMp}", 160, rect.Position.Y + 128, MagicPaper);
+        if (view.SelectedIndex == 2) Text(">", rect.Position.X + 76, rect.Position.Y + 147, MagicPaper);
+        Text("CAST", rect.Position.X + 90, rect.Position.Y + 147, MagicPaper);
+        Center("ARROWS ADJUST  ENTER SELECT  ESC BACK", 160, rect.Position.Y + 166, MagicPaper);
+        return;
+
+        void MagicPair(string label, string value, int y)
+        {
+            Text(label, rect.Position.X + 14, y, MagicPaper);
+            Text(value, rect.End.X - 14 - TextWidth(value), y, MagicPaper);
+        }
+
+        void MagicRow(string label, string value, int steps, int index, int y)
+        {
+            if (view.SelectedIndex == index) Text(">", rect.Position.X + 14, y, MagicPaper);
+            Text(label, rect.Position.X + 28, y, MagicPaper);
+            Text(value, rect.End.X - 14 - TextWidth(value), y, MagicPaper);
+            DrawMagicSlider(rect.Position.X + 28, y + 12, steps);
+        }
+    }
+
+    private void DrawMagicSlider(int x, int y, int steps)
+    {
+        Fill(x, y, QuarterStepMultiplier.MaxSteps * 5 + 2, 9, MagicPaper);
+        Fill(x + 1, y + 1, QuarterStepMultiplier.MaxSteps * 5, 7, MagicInk);
+        for (var step = 0; step < QuarterStepMultiplier.MaxSteps; step++)
+            if (step < steps) Fill(x + 1 + step * 5, y + 1, 4, 7, MagicPaper);
     }
 
     private void DrawMachineLog()
@@ -394,6 +446,7 @@ public partial class BattleScreen : Node2D
     }
     private void Text(string text, int x, int y, Color color, int scale = 1) => PixelArt.Text(this, text, x, y, color, scale);
     private void Center(string text, int center, int y, Color color, int scale = 1) => Text(text, center - (text.Length * 6 - 1) * scale / 2, y, color, scale);
+    private static int TextWidth(string text) => Math.Max(0, text.Length * 6 - 1);
     private static List<string> Wrap(string text, int columns)
     {
         var lines = new List<string>();

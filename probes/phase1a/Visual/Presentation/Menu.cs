@@ -4,8 +4,8 @@ public enum MenuAction { None, Attack, Defend, Run, Fireball }
 public enum ChoiceKind { None, Attack, Defend, Run, Fireball, Wip }
 public sealed record MenuEntry(
     string Label, MenuEntry[]? Children = null,
-    MenuAction Action = MenuAction.None, string? WipLabel = null);
-public readonly record struct MenuChoice(ChoiceKind Kind, string Label = "");
+    MenuAction Action = MenuAction.None, string? WipLabel = null, string? WipMessage = null);
+public readonly record struct MenuChoice(ChoiceKind Kind, string Label = "", string Message = "");
 
 // A disposable, presentation-only tree. Only the functional choices can
 // become combat commands; selecting a WIP leaf leaves this menu exactly as it was.
@@ -62,7 +62,7 @@ public sealed class BattleMenu
             MenuAction.Fireball => ChoiceKind.Fireball,
             _ => ChoiceKind.Wip
         };
-        return new(kind, entry.WipLabel ?? entry.Label);
+        return new(kind, entry.WipLabel ?? entry.Label, entry.WipMessage ?? "");
     }
 
     public bool Back()
@@ -87,20 +87,8 @@ public sealed class BattleMenu
         new("ATTACK", Action: MenuAction.Attack),
         new("DEFEND", Action: MenuAction.Defend),
         new("MAGIC", [
-            new("ELEMENTAL MAGIC", [
-                new("Fire", Action: MenuAction.Fireball),
-                new("Water"), new("Ice"), new("Wind"), new("Earth"), new("Lightning"),
-                new("Nature"), new("Composite Elements")
-            ]),
-            Category("RESTORATION MAGIC", "Healing", "Regeneration", "Purification", "Revival", "Restoration"),
-            Category("ENHANCEMENT MAGIC", "Physical Enhancement", "Magical Enhancement", "Speed", "Defense", "Resistance", "Weapon Enhancement"),
-            Category("WEAKENING MAGIC", "Stat Reduction", "Vulnerability", "Silence", "Binding", "Sleep", "Curse"),
-            Category("SPATIAL MAGIC", "Teleportation", "Displacement", "Barrier", "Pocket Space", "Spatial Distortion"),
-            Category("TEMPORAL MAGIC", "Acceleration", "Deceleration", "Delay", "Time Manipulation"),
-            Category("CONJURATION MAGIC", "Object Conjuration", "Weapon Conjuration", "Armor Conjuration", "Material Conjuration", "Construct Creation", "Temporary Creation"),
-            Category("TRANSFORMATION MAGIC", "Self Transformation", "Beast Transformation", "Material Transformation", "Size Manipulation", "Polymorph"),
-            Category("MIND / SOUL MAGIC", "Mental Influence", "Illusion", "Memory", "Soul Manipulation", "Spirit Interaction"),
-            Category("PRIMORDIAL / ROOT MAGIC", "Light", "Darkness", "Creation", "Destruction", "Order", "Chaos", "Life", "Death", "Space", "Time", "Unknown / Forbidden")
+            new("CHANTLESS", CreateMagicTaxonomy()),
+            new("CHANT", WipMessage: "Chanted magic is not implemented yet.")
         ]),
         new("SUMMONING", [
             Category("CREATURE SUMMONING", "Beast", "Monster", "Magical Beast", "Dragon", "Demon", "Other Creature"),
@@ -134,5 +122,23 @@ public sealed class BattleMenu
         Category("ITEMS", "Consumables", "Medicine", "Food", "Bombs / Throwables", "Scrolls", "Magical Items", "Tools", "Quest / Special", "Equipment Quick Use"),
         Category("TACTICS", "Party Formation", "Target Priority", "Ally Behavior", "Summon Behavior", "Auto Battle", "Reserve / Swap", "Battle Information"),
         new("RUN", Action: MenuAction.Run)
+    ];
+
+    private static MenuEntry[] CreateMagicTaxonomy() =>
+    [
+        new("ELEMENTAL MAGIC", [
+            new("Fire", Action: MenuAction.Fireball),
+            new("Water"), new("Ice"), new("Wind"), new("Earth"), new("Lightning"),
+            new("Nature"), new("Composite Elements")
+        ]),
+        Category("RESTORATION MAGIC", "Healing", "Regeneration", "Purification", "Revival", "Restoration"),
+        Category("ENHANCEMENT MAGIC", "Physical Enhancement", "Magical Enhancement", "Speed", "Defense", "Resistance", "Weapon Enhancement"),
+        Category("WEAKENING MAGIC", "Stat Reduction", "Vulnerability", "Silence", "Binding", "Sleep", "Curse"),
+        Category("SPATIAL MAGIC", "Teleportation", "Displacement", "Barrier", "Pocket Space", "Spatial Distortion"),
+        Category("TEMPORAL MAGIC", "Acceleration", "Deceleration", "Delay", "Time Manipulation"),
+        Category("CONJURATION MAGIC", "Object Conjuration", "Weapon Conjuration", "Armor Conjuration", "Material Conjuration", "Construct Creation", "Temporary Creation"),
+        Category("TRANSFORMATION MAGIC", "Self Transformation", "Beast Transformation", "Material Transformation", "Size Manipulation", "Polymorph"),
+        Category("MIND / SOUL MAGIC", "Mental Influence", "Illusion", "Memory", "Soul Manipulation", "Spirit Interaction"),
+        Category("PRIMORDIAL / ROOT MAGIC", "Light", "Darkness", "Creation", "Destruction", "Order", "Chaos", "Life", "Death", "Space", "Time", "Unknown / Forbidden")
     ];
 }

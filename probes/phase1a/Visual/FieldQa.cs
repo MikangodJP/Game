@@ -1,5 +1,6 @@
 using Godot;
 using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
 
@@ -116,24 +117,30 @@ public partial class BattleScreen
             await Press(Key.E); await Press(Key.R);
             Check(game.Mode == GameMode.Battle && ui.Mode == ScreenMode.Menu, "E and R cannot open equipment or reset during battle");
             var beforeWip = ui.Session.MachineText;
-            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Water");
+            await Choose("MAGIC"); await Choose("CHANTLESS"); await Choose("ELEMENTAL MAGIC"); await Choose("Water");
             Check(ui.Mode == ScreenMode.Wip, "existing nested battle commands retain their WIP flow");
-            await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape);
+            await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape); await Press(Key.Escape);
             Check(ui.Session.MachineText == beforeWip, "WIP navigation consumes no battle action");
             await Capture(outputDirectory, "field-05-battle");
 
             var fireballFirstEvent = ui.Session.Events.Length;
-            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            await Choose("MAGIC"); await Choose("CHANTLESS"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            Check(ui.Mode == ScreenMode.MagicAdjustment && ui.MagicAdjustment is { SizeSteps: 4, OutputSteps: 4 },
+                "Field encounter opens Battle-owned Fireball adjustment at the default values");
+            await Press(Key.Right); await Press(Key.Down); await Press(Key.Right);
+            Check(ui.MagicAdjustment is { SizeSteps: 5, OutputSteps: 5, MpCost: 6 },
+                "Battle adjustment edits the field player's cast draft");
+            await Press(Key.Down); await Press(Key.Enter);
             Check(ui.Mode == ScreenMode.Targets && ui.Breadcrumb == "FIREBALL > CHOOSE TARGET",
-                "configured Fireball uses the shared battle target screen");
+                "Battle Cast uses the shared target screen");
             await Press(Key.Enter);
-            Check(ui.Session.View.Hero.Mp == 8, "default Fireball costs exactly four MP");
-            Check(ui.Session.View.Enemies[0].Hp == 25, "default Output produces thirteen magical damage on Goblin");
+            Check(ui.Session.View.Hero.Mp == 6, "Size 1.25 Output 1.25 Fireball costs exactly six MP");
+            Check(ui.Session.View.Enemies[0].Hp == 23, "Output 1.25 produces fifteen magical damage on Goblin");
             var fireballEvents = ui.Session.Events.Skip(fireballFirstEvent).ToArray();
-            Check(fireballEvents.Count(e => e.Kind == "ManaChanged" && e.Source == 0 && e.Amount == -4) == 1,
-                "default Fireball deducts MP exactly once");
-            Check(ui.Session.LastMessages.Contains("Size 1.00 | Output 1.00 | MP 4"),
-                "default Fireball details are readable in battle");
+            Check(fireballEvents.Count(e => e.Kind == "ManaChanged" && e.Source == 0 && e.Amount == -6) == 1,
+                "configured Fireball deducts MP exactly once");
+            Check(ui.Session.LastMessages.Contains("Size 1.25 | Output 1.25 | MP 6"),
+                "configured Fireball details are readable in battle");
             Check(fireballEvents.Any(e => e.Kind == "ActionStarted" && e.Source != 0),
                 "enemies respond through the normal loop after configured Fireball");
             await Capture(outputDirectory, "field-05-fireball");
