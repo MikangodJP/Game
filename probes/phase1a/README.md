@@ -147,24 +147,33 @@ its R reset behavior is preserved for regression checks. See the
 
 ## Launch the visual harness
 
-From the repository root in PowerShell:
+From the repository root with PowerShell 7:
 
 ```powershell
-.\probes\phase1a\launch-visual.ps1
+pwsh ./probes/phase1a/launch-visual.ps1
 ```
 
 This restores and builds the C# project, imports Godot resources, and opens the
 field screen. Close the window to exit. The source lives in `Visual/`.
 
-The verified local tools are .NET SDK **8.0.425** and **Godot 4.6.3 .NET for
-Windows x64**. They are already installed under the ignored `.tools/` directory
-in this workspace. For a fresh checkout, install a .NET 8 SDK (local
-`.tools/dotnet/dotnet.exe` or PATH) and extract the official
-[Godot 4.6.3 .NET archive](https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/Godot_v4.6.3-stable_mono_win64.zip)
-under `.tools/godot/`, retaining its `Godot_v4.6.3-stable_mono_win64` folder.
-The visual NuGet configuration uses only that engine's bundled SDK packages;
-there is no external package feed. The regular non-.NET Godot build cannot run
-this harness. `-Dotnet <path>` selects another SDK executable.
+The required tools are **PowerShell 7**, a **.NET 8 SDK**, and **Godot 4.6.3
+.NET/Mono**. The workflow is shared by macOS, Windows and Linux. It prefers a
+repository-local `.tools/dotnet/` installation, then checks `dotnet` on PATH and
+standard platform locations for an installed 8.0 SDK. A newer SDK on PATH does
+not silently replace the required .NET 8 toolchain. `-Dotnet <path>` selects an
+explicit .NET host.
+
+Install the matching build from the official
+[Godot 4.6.3 archive](https://godotengine.org/download/archive/4.6.3-stable/).
+The launcher discovers the repository-local Windows layout, a `Godot_mono.app`
+in the macOS system Applications folder, or `godot-mono`, `godot4` and
+`godot` on PATH. Use `-Godot <path>` for any other location. The launcher checks
+that the selected engine reports version 4.6.3 and Mono support; the regular
+non-.NET Godot build cannot run this harness.
+
+`Visual/NuGet.Config` restores the pinned `Godot.NET.Sdk/4.6.3` package from
+nuget.org into the ignored repository cache. The headless core intentionally
+keeps its separate no-feed configuration because it has no external packages.
 
 | Input | Action |
 |---|---|
@@ -232,7 +241,7 @@ save flow or production UI infrastructure was added.
 ## Verify the visual harness and original probe
 
 ```powershell
-.\probes\phase1a\launch-visual.ps1 -Verify
+pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
 This runs the **58 core tests in both Debug and Release**, the **20 presentation
@@ -260,31 +269,28 @@ See [current RPG loop findings](RPG_LOOP_REPORT.md), the
 
 ## Run only the headless probe
 
-From the repository root, in PowerShell:
+From the repository root with PowerShell 7:
 
 ```powershell
-.\probes\phase1a\verify.ps1 -Configuration Debug
-.\probes\phase1a\verify.ps1 -Configuration Release
+pwsh ./probes/phase1a/verify.ps1 -Configuration Debug
+pwsh ./probes/phase1a/verify.ps1 -Configuration Release
 ```
 
-Requires a **.NET 8 SDK**, not just the runtime. The script uses the local
-`.tools/dotnet/dotnet.exe` if present, otherwise `dotnet` on PATH. A different
-SDK executable can be supplied with `-Dotnet <path>`.
-
-The verified environment is Windows x64, SDK **8.0.425**, runtime **8.0.31**, C# 12.
-The SDK was installed locally under the ignored `.tools/` directory and its
-archive was verified against Microsoft's release metadata SHA512. It is not
-part of the source deliverable. The headless probe has **no external package dependencies**;
-the tests are a small console runner using real battle objects. `verify.ps1`
-restores, builds, and runs it; any failure returns a failing script invocation.
+This requires a **.NET 8 SDK**, not just the runtime. The current macOS arm64
+preflight uses SDK **8.0.425**, runtime **8.0.31**, C# 12. The SDK is machine
+tooling and is not part of the source deliverable. The headless probe has **no
+external package dependencies**; the tests are a small console runner using real
+battle objects. `verify.ps1` restores, builds, and runs it; any failure returns a
+failing script invocation.
 
 Print the golden scenario after building:
 
 ```powershell
-.\.tools\dotnet\dotnet.exe .\probes\phase1a\Probe\bin\Debug\net8.0\Phase1A.Probe.dll 20260909
+dotnet ./probes/phase1a/Probe/bin/Debug/net8.0/Phase1A.Probe.dll 20260909
 ```
 
-An installed `dotnet` can replace the local executable. The CLI prints only the
+Use the .NET 8 host selected by the verification script if `dotnet` on PATH is a
+different major version. The CLI prints only the
 canonical event log. Tests launch two fresh OS processes, with `en-US` and `tr-TR`
 cultures, and compare their **raw stdout bytes** with each other and with the
 fixed baseline. They do not regenerate or normalize the baseline.
@@ -331,6 +337,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Visual/project.godot`, `Visual/BattleScreen.tscn`, `Visual/Visual.csproj`, `Visual/NuGet.Config` | Small Godot C# host and local SDK configuration |
 | `VisualTests/` | 20 headless presentation tests, including five field-loop tests, without a Godot runtime dependency |
 | `launch-visual.ps1` | Build/launch or complete verification command |
+| `toolchain.ps1` | Shared cross-platform .NET 8 discovery and isolated CLI/cache environment |
 | `VISUAL_HARNESS_REPORT.md` | Integration findings, boundaries and verification evidence |
 | `STAT_SYSTEM_REPORT.md` | Historical stat behavior, exact profiles and intentional golden revision |
 | `EQUIPMENT_REPORT.md` | Historical equipment/grid changes, boundaries, verification and limitations |

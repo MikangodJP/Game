@@ -3,3 +3,4 @@
 **/obj/
 probes/phase1a/artifacts/
 **/.godot/
+.DS_Store

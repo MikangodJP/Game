@@ -1,40 +1,63 @@
 param(
     [string]$Dotnet,
+    [string]$Godot,
     [switch]$Verify
 )
 $ErrorActionPreference = 'Stop'
-$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-if (-not $Dotnet) {
-    $localSdk = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
-    $Dotnet = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { (Get-Command dotnet -ErrorAction Stop).Source }
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+. (Join-Path $PSScriptRoot 'toolchain.ps1')
+$Dotnet = Resolve-Dotnet8 -RequestedPath $Dotnet
+Initialize-DotnetEnvironment -Dotnet $Dotnet -ProjectRoot $projectRoot
+
+if (-not $Godot) {
+    $godotCandidates = [System.Collections.Generic.List[string]]::new()
+    if ($IsWindows) {
+        $godotCandidates.Add((Join-Path $projectRoot '.tools' 'godot' 'Godot_v4.6.3-stable_mono_win64' 'Godot_v4.6.3-stable_mono_win64_console.exe'))
+    } elseif ($IsMacOS) {
+        $systemRoot = [IO.Path]::GetPathRoot($projectRoot)
+        $godotCandidates.Add((Join-Path $projectRoot '.tools' 'godot' 'Godot_mono.app' 'Contents' 'MacOS' 'Godot'))
+        $godotCandidates.Add((Join-Path $systemRoot 'Applications' 'Godot_mono.app' 'Contents' 'MacOS' 'Godot'))
+    } else {
+        $godotCandidates.Add((Join-Path $projectRoot '.tools' 'godot' 'Godot'))
+    }
+
+    foreach ($commandName in @('godot-mono', 'godot4', 'godot')) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($command) {
+            $godotCandidates.Add($command.Source)
+        }
+    }
+
+    foreach ($candidate in $godotCandidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $Godot = $candidate
+            break
+        }
+    }
 }
-$Dotnet = (Get-Command $Dotnet -ErrorAction Stop).Source
-$godot = Join-Path $projectRoot '.tools\godot\Godot_v4.6.3-stable_mono_win64\Godot_v4.6.3-stable_mono_win64_console.exe'
-if (-not (Test-Path -LiteralPath $godot)) {
-    throw 'Install Godot 4.6.3 .NET in .tools/godot as described in probes/phase1a/README.md.'
+
+if (-not $Godot) {
+    throw 'Godot 4.6.3 .NET was not found. Install it as described in probes/phase1a/README.md or pass -Godot <path>.'
 }
-$env:DOTNET_ROOT = Split-Path $Dotnet
-$env:DOTNET_HOST_PATH = $Dotnet
-$env:DOTNET_CLI_HOME = Join-Path $projectRoot '.tools\cli-home'
-$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
-$env:DOTNET_ADD_GLOBAL_TOOLS_TO_PATH = 'false'
-$env:NUGET_PACKAGES = Join-Path $projectRoot '.tools\nuget-packages'
-$env:NUGET_HTTP_CACHE_PATH = Join-Path $projectRoot '.tools\nuget-cache'
-$env:PATH = "$env:DOTNET_ROOT;$env:PATH"
+$Godot = (Get-Command $Godot -ErrorAction Stop).Source
+$godotVersion = & $Godot --version
+if ($LASTEXITCODE -ne 0 -or $godotVersion -notmatch '^4\.6\.3\..*mono') {
+    throw "Godot 4.6.3 .NET is required; '$Godot' reported '$godotVersion'."
+}
+
 $visualRoot = Join-Path $PSScriptRoot 'Visual'
-$artifacts = Join-Path $PSScriptRoot 'artifacts\visual'
+$artifacts = Join-Path $PSScriptRoot 'artifacts' 'visual'
 New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 
 if ($Verify) {
     & (Join-Path $PSScriptRoot 'verify.ps1') -Dotnet $Dotnet -Configuration Debug
     & (Join-Path $PSScriptRoot 'verify.ps1') -Dotnet $Dotnet -Configuration Release
-    $modelTests = Join-Path $PSScriptRoot 'VisualTests\Phase1A.VisualTests.csproj'
+    $modelTests = Join-Path $PSScriptRoot 'VisualTests' 'Phase1A.VisualTests.csproj'
     & $Dotnet restore $modelTests --configfile (Join-Path $PSScriptRoot 'NuGet.Config') -p:NuGetAudit=false
     if ($LASTEXITCODE -ne 0) { throw 'Visual model test restore failed.' }
     & $Dotnet build $modelTests --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Visual model test build failed.' }
-    & $Dotnet (Join-Path $PSScriptRoot 'VisualTests\bin\Debug\net8.0\Phase1A.VisualTests.dll')
+    & $Dotnet (Join-Path $PSScriptRoot 'VisualTests' 'bin' 'Debug' 'net8.0' 'Phase1A.VisualTests.dll')
     if ($LASTEXITCODE -ne 0) { throw 'Visual model tests failed.' }
 }
 
@@ -43,16 +66,16 @@ $visualProject = Join-Path $visualRoot 'Visual.csproj'
 if ($LASTEXITCODE -ne 0) { throw 'Godot C# restore failed.' }
 & $Dotnet build $visualProject --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'Godot C# build failed.' }
-& $godot --headless --path $visualRoot --import --log-file (Join-Path $artifacts 'import.log')
+& $Godot --headless --path $visualRoot --import --log-file (Join-Path $artifacts 'import.log')
 if ($LASTEXITCODE -ne 0) { throw 'Godot import failed.' }
 
 if ($Verify) {
     # Rendering QA needs a graphical desktop; headless Godot uses a dummy renderer.
-    & $godot --path $visualRoot --log-file (Join-Path $artifacts 'engine-qa.log') -- --qa $artifacts
+    & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'engine-qa.log') -- --qa $artifacts
     if ($LASTEXITCODE -ne 0) { throw 'Godot visual/input QA failed.' }
-    & $godot --path $visualRoot --log-file (Join-Path $artifacts 'field-engine-qa.log') -- --field-qa $artifacts
+    & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'field-engine-qa.log') -- --field-qa $artifacts
     if ($LASTEXITCODE -ne 0) { throw 'Godot field/battle loop QA failed.' }
 } else {
-    & $godot --path $visualRoot --log-file (Join-Path $artifacts 'engine.log')
+    & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'engine.log')
     if ($LASTEXITCODE -ne 0) { throw 'Godot visual harness failed.' }
 }
