@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Rules;
 
 namespace Phase1A.Visual.Presentation;
@@ -9,7 +10,7 @@ public sealed record ActorView(
     string Status, bool Guarding, CharacterStats EffectiveStats);
 public sealed record BattleView(ActorView Hero, ImmutableArray<ActorView> Enemies, bool Finished, Outcome? Outcome);
 
-// Only this adapter owns the simulation reference. UI sees values and submits one of three choices.
+// Only this adapter owns the simulation reference. UI sees values and submits typed choices.
 public sealed class BattleSession
 {
     private readonly BattleState battle;
@@ -44,6 +45,26 @@ public sealed class BattleSession
             _ => null
         };
         if (command is null) return false;
+        return Resolve(command);
+    }
+    public bool CanSubmitFireball(ChantlessMagicConfiguration configuration)
+    {
+        var ability = FireballMagic.CreateAbility(configuration);
+        return !battle.IsFinished && battle.NextActorId == 0 && battle.Read(0).Mp >= ability.ManaCost;
+    }
+    public void ShowInsufficientFireball(ChantlessMagicConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        LastMessages = ["Not enough MP."];
+    }
+    public bool SubmitFireball(ChantlessMagicConfiguration configuration, int targetId)
+    {
+        var ability = FireballMagic.CreateAbility(configuration);
+        if (!CanSubmitFireball(configuration) || !battle.LivingEnemies(0).Contains(targetId)) return false;
+        return Resolve(new(0, ability, targetId), configuration);
+    }
+    private bool Resolve(Command command, ChantlessMagicConfiguration? fireball = null)
+    {
         var firstEvent = Events.Length;
         if (!battle.TakeTurn(command)) return false;
         // This harness gives enemies only Strike. Original Scenario.Run and its golden stay intact.
@@ -54,7 +75,15 @@ public sealed class BattleSession
                 throw new InvalidOperationException("Harness enemy controller submitted an invalid attack.");
         }
         if (battle.IsFinished) Result = battle.Finish();
-        LastMessages = Present(Events.Skip(firstEvent));
+        var messages = Present(Events.Skip(firstEvent)).ToBuilder();
+        if (fireball is not null)
+        {
+            messages.Insert(Math.Min(1, messages.Count),
+                $"Size {QuarterStepMultiplier.Format(fireball.SizeSteps)} | " +
+                $"Output {QuarterStepMultiplier.Format(fireball.OutputSteps)} | " +
+                $"MP {ChantlessMagicCost.Calculate(fireball)}");
+        }
+        LastMessages = messages.ToImmutable();
         return true;
     }
     public string MachineText => string.Concat(Events.Select(e => FormattableString.Invariant(
@@ -70,6 +99,7 @@ public sealed class BattleSession
                 "BattleStarted" => "Battle begins!",
                 "ActorJoined" when e.Target != 0 => $"A {Name(e.Target)} appeared!",
                 "ActionStarted" when e.Detail == Scenario.Strike.Id => $"{Name(e.Source)} attacks {Name(e.Target)}!",
+                "ActionStarted" when e.Detail == PrototypeMagic.Fireball.Id => $"{Name(e.Source)} casts Fireball on {Name(e.Target)}!",
                 "Damaged" => $"{Name(e.Target)} takes {e.Amount} damage!",
                 "Healed" => $"{Name(e.Target)} recovers {e.Amount} HP.",
                 "Defended" => $"{Name(e.Source)} defends!",

@@ -1,4 +1,5 @@
 using Godot;
+using Phase1A.Magic;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
 
@@ -88,11 +89,19 @@ public partial class BattleScreen
             await Press(Key.Enter); await Press(Key.Escape);
             await Choose("MAGIC"); await Capture(outputDirectory, "02-magic-grid"); await Press(Key.Escape);
             await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
-            Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Fire", "Magic / Elemental / Fire WIP");
-            await Capture(outputDirectory, "02-fire-wip");
+            Check(ui.Mode == ScreenMode.Targets && ui.Breadcrumb == "FIREBALL > CHOOSE TARGET",
+                "Magic / Elemental / Fire opens Fireball targeting");
+            await Capture(outputDirectory, "02-fire-target");
             await Press(Key.Backspace);
-            Check(ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label == "Fire", "WIP back preserves leaf selection");
+            Check(ui.Mode == ScreenMode.Menu && ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label == "Fire" &&
+                ui.Session.MachineText == untouched && ui.Session.View.Hero.Mp == 12,
+                "Fireball target Back preserves the leaf without a turn or MP cost");
             await Press(Key.Escape); await Press(Key.Escape);
+            await Choose("MAGIC"); await Choose("TRANSFORMATION MAGIC"); await Choose("Self Transformation");
+            Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Self Transformation",
+                "Transformation Magic remains a separate WIP taxonomy");
+            await Capture(outputDirectory, "02-transformation-wip");
+            await Press(Key.Backspace); await Press(Key.Escape); await Press(Key.Escape);
             await Choose("SUMMONING"); await Choose("CREATURE SUMMONING"); await Choose("Dragon");
             Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Dragon", "Summoning / Creature / Dragon WIP");
             await Capture(outputDirectory, "03-dragon-wip");
@@ -122,6 +131,29 @@ public partial class BattleScreen
             await FinishMessages(); await Choose("DEFEND");
             Check(ui.Session.View.Hero.Guarding && ui.Session.Events.Count(e => e.Kind == "GuardBlocked") == 2, "Defend covers both enemy responses");
             await Capture(outputDirectory, "06-defend");
+            await FinishMessages();
+            var fireballFirstEvent = ui.Session.Events.Length;
+            var beforeFireballMp = ui.Session.View.Hero.Mp;
+            var beforeFireballHp = ui.Session.View.Enemies[0].Hp;
+            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            Check(ui.Mode == ScreenMode.Targets, "affordable Fireball reaches the shared target screen");
+            await Press(Key.Enter);
+            Check(ui.Mode == ScreenMode.Messages && ui.Session.View.Hero.Mp == beforeFireballMp - 4,
+                "default Fireball deducts exactly four MP once");
+            Check(ui.Session.View.Enemies[0].Hp == beforeFireballHp - 13,
+                "default Fireball deals real configured magical damage to Goblin");
+            var fireballEvents = ui.Session.Events.Skip(fireballFirstEvent).ToArray();
+            Check(fireballEvents.Count(e => e.Kind == "ManaChanged" && e.Source == 0 && e.Amount == -4) == 1,
+                "Fireball emits one player MP deduction");
+            var castIndex = Array.FindIndex(fireballEvents, e => e.Kind == "ActionStarted" && e.Detail == PrototypeMagic.Fireball.Id);
+            var damageIndex = Array.FindIndex(fireballEvents, e => e.Kind == "Damaged" && e.Source == 0);
+            var responseIndex = Array.FindIndex(fireballEvents, e => e.Kind == "ActionStarted" && e.Source != 0);
+            Check(castIndex >= 0 && castIndex < damageIndex && damageIndex < responseIndex,
+                "Fireball damage precedes the normal enemy response sequence");
+            Check(ui.Session.LastMessages.Contains("Adventurer casts Fireball on Goblin!") &&
+                ui.Session.LastMessages.Contains("Size 1.00 | Output 1.00 | MP 4"),
+                "Fireball messages expose domain identity, configuration, and cost");
+            await Capture(outputDirectory, "06-fireball");
             await FinishMessages(); await Choose("RUN");
             Check(ui.Session.View.Outcome == Phase1A.Encounter.Outcome.Fled, "Run ends with Fled");
             await FinishMessages(); await Capture(outputDirectory, "07-fled");

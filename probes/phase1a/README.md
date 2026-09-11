@@ -76,14 +76,15 @@ the Field control menu.
 
 Status is functional and read-only. It shows the existing `ADVENTURER` prototype
 identity and projects the current persistent player's live HP/MP and effective
-STR/DEF/MAG/RES/AGI values; it does not copy or invent stats. Magic, Resistance
-and Agility remain displayed WIP stats.
+STR/DEF/MAG/RES/AGI values; it does not copy or invent stats. Magic and Resistance
+feed Fireball's implemented damage seam; Agility remains displayed-only.
 
 `CharacterPreparation` owns the one authoritative chantless configuration and
 the learned Base Magic collection, which contains Fireball by default. Size and
 Output are stored as integer quarter steps, never accumulated floating point.
-At this intermediate configuration slice the existing Battle `Fire` leaf remains
-WIP; the following Battle integration commit consumes this same player state.
+Battle's existing visible `MAGIC > ELEMENTAL MAGIC > Fire` leaf consumes that
+configuration as the domain spell **Fireball**. `Fire` remains only the current
+taxonomy label; it is not the permanent identity of the spell.
 
 **Escape / Backspace / controller B** dismisses a panel first, then pops one
 child window, then closes from the root. **Tab / controller View-Select** closes
@@ -255,7 +256,7 @@ at missing cells in an incomplete final row. WIP submenus use **two columns**,
 up to four visible rows and row-based scrolling. Back restores the previous
 menu's cursor; there is no wrap or configurable navigation policy.
 
-The three functional commands are:
+The four functional commands are:
 
 - **ATTACK:** choose Goblin or Wolf and submit the existing `Strike` ability.
   Living enemies answer in the core's existing stable turn order.
@@ -263,12 +264,19 @@ The three functional commands are:
   Defense mitigation, rounded down with minimum 1, then capped to remaining HP.
   Guard ends at the start of the defender's next **accepted** action; rejected
   commands do not remove it. This is a temporary boolean, not a new status system.
+- **MAGIC > ELEMENTAL MAGIC > Fire:** cast the configured domain spell
+  **Fireball** at one living enemy. Affordability is checked before target
+  selection. A failed check shows `Not enough MP.` without spending a turn;
+  target cancellation is also free. A confirmed cast deducts the centralized
+  cost once, applies magical damage, then uses the normal enemy response loop.
 - **RUN:** guaranteed escape, with a distinct `Fled` result and no enemy response.
 
-**MAGIC, SUMMONING, SKILLS, SPECIAL, ITEMS and TACTICS are UI only.** The complete
-requested hierarchy contains 149 WIP leaves. Every leaf opens a named WIP
-dialog and returns to the same selection. Submenus support a stack of any depth,
-explicit Back, breadcrumbs and scrolling. They consume no turns or random draws.
+Every other Magic leaf, plus **SUMMONING, SKILLS, SPECIAL, ITEMS and TACTICS,**
+remains UI-only. The complete requested hierarchy contains **148 WIP leaves**.
+Every WIP leaf opens a named dialog and returns to the same selection. Submenus
+support a stack of any depth, explicit Back, breadcrumbs and scrolling. WIP
+browsing consumes no turns or random draws. Transformation Magic remains its
+separate five-leaf WIP taxonomy and is not folded into Fireball.
 
 The screen uses a **320×240** viewport, initially **960×720 (3×)**, with integer
 scaling and letterboxing when resized. Sprites, borders and a hand-authored 5×7
@@ -284,11 +292,11 @@ at a time. This is not frame-by-frame event playback.
 Only Strike is used by enemies in this visual fixture. The original headless
 scenario still exercises Crush, Drain and Weakened. Its golden log was
 intentionally updated for the earlier stat formula revision (see below), and
-is **unchanged by the equipment/grid and field-loop updates**.
-The visual fixture has no spell costs, healing or status-producing command;
-MP therefore stays at 12. These starting profiles are prototype data, not final
-balance. Victory and defeat are both valid results. No inventory, summons, rewards,
-save flow or production UI infrastructure was added.
+is **unchanged by the equipment/grid, field-loop and Fireball updates**.
+Fireball is the visual fixture's only MP-consuming player command; there is no
+healing or status-producing player command. These starting profiles are prototype
+data, not final balance. Victory and defeat are both valid results. No inventory,
+summons, rewards, save flow or production UI infrastructure was added.
 
 ## Verify the visual harness and original probe
 
@@ -296,29 +304,30 @@ save flow or production UI infrastructure was added.
 pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
-This runs the **65 core tests in both Debug and Release**, the **32 presentation
-tests** (including traversal of all 149 battle WIP leaves and the Field menu
+This runs the **65 core tests in both Debug and Release**, the **37 presentation
+tests** (including traversal of all 148 battle WIP leaves and the Field menu
 tree), then opens Godot briefly
 for automated rendering/input checks. A graphical desktop is required for the
 last step. The QA injects keyboard and controller events through Godot's normal
 input path, captures native-resolution PNGs, checks the limited palette, and
 exercises equipment preview/equip/unequip, resource maxima, the battle snapshot
-and equipment lock, spatial navigation, Attack, Defend, Run, ordinary battle
-completion and logging.
+and equipment lock, spatial navigation, Attack, Defend, configured Fireball,
+pre-target MP failure, Run, ordinary battle completion and logging.
 This does not claim a physical controller was tested.
 
 Results, engine logs and screenshots are written under `artifacts/visual/`;
 `qa.txt`, `field-qa.txt`, and `menu-qa.txt` must all end with `PASS ALL`. The
 second Godot run
 starts through the normal Field entry and exercises movement, release/collision,
-equipment, encounter contact, escape, defeat/restart, victory, persisted HP/gear,
-defeated encounter removal and continued movement. The third run exercises the
+equipment, Magic Adjustment, configured Fireball, encounter contact, escape,
+defeat/restart, victory, persisted HP/MP/gear/configuration, defeated encounter
+removal and continued movement. The third run exercises the
 Field control menu's real key/controller routing, held-movement clearing,
 nested Back behavior, window bounds and palette, live Status sheet,
 placeholders, Field-under-menu rendering, and Battle input isolation. Existing
 golden comparisons launch separate processes and compare exact bytes. The
 baseline is never regenerated by these commands. The current revision passes
-**213 isolated battle QA checks**, **163 field-loop QA checks**, and **96
+**239 isolated battle QA checks**, **183 field-loop QA checks**, and **96
 Field-menu QA checks** in the real engine.
 See [current RPG loop findings](RPG_LOOP_REPORT.md), the
 [historical equipment findings](EQUIPMENT_REPORT.md), the
@@ -382,11 +391,11 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Probe/BattleState.cs` | Owned mutable battle state, turn progression, event emission, result boundary |
 | `Probe/Scenario.cs` | Three abilities, two monsters, one status, scripted encounter fixture, log formatting |
 | `Probe/Program.cs` | Seed-in / canonical-log-out CLI |
-| `Tests/Program.cs`, `Tests/StatTests.cs`, `Tests/EquipmentTests.cs`, `Tests/FieldTests.cs` | 58 behavior/regression tests, including 12 stat, 11 equipment and 10 field/persistence tests |
+| `Tests/Program.cs`, `Tests/StatTests.cs`, `Tests/EquipmentTests.cs`, `Tests/FieldTests.cs`, `Tests/MagicTests.cs` | 65 behavior/regression tests, including 12 stat, 11 equipment, 10 field/persistence and 7 Magic tests |
 | `golden/battle-20260909.log` | Current reviewed stat baseline; 73 events, 2,590 bytes |
 | `golden/archive/battle-20260909.pre-stats.log` | Preserved pre-stat baseline; 88 events, 3,080 bytes |
 | `REPORT.md` | Phase 1B handoff and the three deferred NON-BLOCKER findings |
-| `Visual/Presentation/BattleSession.cs` | Core-owning adapter, immutable views, three command routes, readable events |
+| `Visual/Presentation/BattleSession.cs` | Core-owning adapter, immutable views, four command routes, affordability and readable events |
 | `Visual/Presentation/Menu.cs` | Requested UI-only command tree, spatial grid and navigation stack |
 | `Visual/Presentation/HarnessController.cs` | Preparation/equipment flow, menu, target, WIP, text and debug state |
 | `Visual/Presentation/GameController.cs` | Field/preparation/battle/game-over mode transitions and input routing |
@@ -395,7 +404,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Visual/HarnessQa.cs` | Opt-in real-engine rendering and input checks |
 | `Visual/FieldQa.cs` | Real-engine acceptance checks for the full field/battle loop |
 | `Visual/project.godot`, `Visual/BattleScreen.tscn`, `Visual/Visual.csproj`, `Visual/NuGet.Config` | Small Godot C# host and local SDK configuration |
-| `VisualTests/` | 20 headless presentation tests, including five field-loop tests, without a Godot runtime dependency |
+| `VisualTests/` | 37 headless presentation tests, including five field-loop tests, without a Godot runtime dependency |
 | `launch-visual.ps1` | Build/launch or complete verification command |
 | `toolchain.ps1` | Shared cross-platform .NET 8 discovery and isolated CLI/cache environment |
 | `VISUAL_HARNESS_REPORT.md` | Integration findings, boundaries and verification evidence |

@@ -1,5 +1,6 @@
 using Phase1A;
 using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Preparation;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
@@ -51,7 +52,7 @@ internal static class FieldLoopTests
             Check(!game.State.Player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "gear locked during combat");
             game.Handle(UiInput.Restart); game.Handle(UiInput.Back);
             Equal(GameMode.Battle, game.Mode);
-            Choose(game, "MAGIC"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
+            Choose(game, "MAGIC"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Water");
             Equal(ScreenMode.Wip, game.Harness.Mode);
             Check(!game.StepField(-1, 0), "WIP overlay does not enable field movement");
             Equal(log, session.MachineText);
@@ -61,6 +62,8 @@ internal static class FieldLoopTests
             var player = new CharacterPreparation(Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats, 70, 7);
             Check(player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "sword equipped before field encounter");
             Check(player.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "armor equipped before field encounter");
+            var magic = new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 5);
+            Check(player.TryConfigureChantlessMagic(magic), "non-default Fireball configured before field encounter");
             var game = new GameController(player: player);
             var field = game.State.Field;
             var map = field.Map;
@@ -69,6 +72,12 @@ internal static class FieldLoopTests
             Equal(70, game.Harness.Session.View.Hero.Hp); Equal(7, game.Harness.Session.View.Hero.Mp);
             Equal(15, game.Harness.Session.View.Hero.EffectiveStats.Strength);
             Equal(12, game.Harness.Session.View.Hero.EffectiveStats.Defense);
+            Choose(game, "MAGIC"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
+            Equal(ScreenMode.Targets, game.Harness.Mode);
+            game.Handle(UiInput.Confirm); FinishMessages(game);
+            Equal(1, game.Harness.Session.View.Hero.Mp);
+            Check(game.Harness.Session.Events.Any(e => e.Kind == "ActionStarted" && e.Detail == PrototypeMagic.Fireball.Id),
+                "configured Fireball crosses the field encounter boundary");
             for (var turn = 0; turn < 20 && !game.Harness.Session.View.Finished; turn++)
             {
                 Choose(game, "ATTACK"); game.Handle(UiInput.Confirm); FinishMessages(game);
@@ -83,7 +92,8 @@ internal static class FieldLoopTests
             Check(ReferenceEquals(player, game.State.Player), "victory updates existing player");
             Check(ReferenceEquals(field, game.State.Field) && ReferenceEquals(map, field.Map), "field and map survive encounter");
             Equal(contactPosition, field.PlayerPosition);
-            Equal(remainingHp, player.Hp); Equal(7, player.Mp);
+            Equal(remainingHp, player.Hp); Equal(1, player.Mp);
+            Equal(magic, player.ChantlessMagic);
             Equal(PrototypeEquipment.WoodenSword, player.Loadout.Get(EquipmentSlot.Weapon));
             Check(field.Encounters.Single().Defeated, "victory recorded in field state");
             Check(!game.State.InEncounter && !player.InBattle, "completed encounter released");

@@ -191,7 +191,7 @@ Expected: Task 3 Battle integration and golden files are absent.
 
 **Interfaces:** Consumes player-owned configuration, central cost, and ability factory. Produces typed Fireball Battle choice, pre-target failure, normal targeting/submission, and deterministic readable messages.
 
-- [ ] **Step 1: Write failing Battle tests**
+- [x] **Step 1: Write failing Battle tests**
 
 Affordable: target mode, exact one-time MP reduction, enemy damage, Output effect, Size non-effect, details, and enemy actions after player damage. Unaffordable:
 
@@ -203,37 +203,37 @@ Equal(beforeLog, depleted.Session.MachineText);
 
 Assert Transformation Magic still contains exactly Self Transformation, Beast Transformation, Material Transformation, Size Manipulation, and Polymorph as WIP.
 
-- [ ] **Step 2: Run VisualTests red**
+- [x] **Step 2: Run VisualTests red**
 
-- [ ] **Step 3: Activate only the existing `Fire` leaf**
+- [x] **Step 3: Activate only the existing `Fire` leaf**
 
 Add `MenuAction.Fireball` and `ChoiceKind.Fireball`; make only `new MenuEntry("Fire", Action: MenuAction.Fireball)` functional. Keep every sibling. Update WIP count `149 → 148` and test Fire separately.
 
-- [ ] **Step 4: Add BattleSession affordability/submission**
+- [x] **Step 4: Add BattleSession affordability/submission**
 
 `CanSubmitFireball` uses current actor MP and central cost. Insufficient MP sets `LastMessages` to `Not enough MP.` without `TakeTurn`. `SubmitFireball` builds one ability, shares Attack's accepted-command/enemy-response loop, and adds Fireball/Size/Output/MP text. The ability cost performs the sole deduction.
 
-- [ ] **Step 5: Check affordability before target selection**
+- [x] **Step 5: Check affordability before target selection**
 
 On Fire choice, fail immediately to Messages when unaffordable. Otherwise set a pending Fireball action and open the existing target mode. Target Confirm dispatches Attack or Fireball; Back cancels either. Do not create another target screen.
 
-- [ ] **Step 6: Extend Battle and Field QA**
+- [x] **Step 6: Extend Battle and Field QA**
 
 Replace Fire-WIP checks with Fireball target/cast/cost/damage/message/order checks. Field QA commits a non-default configuration, casts it, completes the encounter, and confirms persistence. Exercise a Transformation leaf as WIP.
 
-- [ ] **Step 7: Update docs and test counts**
+- [x] **Step 7: Update docs and test counts**
 
 Remove obsolete statements that all Magic is WIP or MP always remains 12. Describe only implemented chantless behavior; future Chant remains an extension seam.
 
-- [ ] **Step 8: Run Core Debug, Core Release, Presentation, all engine QA, and full `-Verify`**
+- [x] **Step 8: Run Core Debug, Core Release, Presentation, all engine QA, and full `-Verify`**
 
 Expected: all expanded suites green, Battle QA above `213`, Field above `163`, Menu above `85`, zero warnings, all reports `PASS ALL`, golden unchanged.
 
-- [ ] **Step 9: Run the normal-game acceptance flow**
+- [x] **Step 9: Run the normal-game acceptance flow**
 
 Verify cancel, Apply, preserved values, immediate MP failure where reachable, configured targeting/cost/damage, normal enemy response, victory return, configuration persistence, and Information Enter dismissal.
 
-- [ ] **Step 10: Audit and commit Battle slice**
+- [x] **Step 10: Audit and commit Battle slice**
 
 ```bash
 git diff --check

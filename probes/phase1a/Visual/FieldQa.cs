@@ -1,5 +1,6 @@
 using Godot;
 using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
 
@@ -102,6 +103,15 @@ public partial class BattleScreen
             await Press(Key.Down); await Press(Key.Enter);
             FieldPosition(2, 5, "preparation Return to Field does not start a standalone battle");
 
+            await Press(Key.Tab); await MoveFieldMenuTo("MAGIC"); await Press(Key.Enter);
+            await MoveFieldMenuTo("ADJUSTMENT"); await Press(Key.Enter);
+            await Press(Key.Right); await Press(Key.Down); await Press(Key.Right);
+            await Press(Key.Down); await Press(Key.Enter);
+            Check(player.ChantlessMagic == new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 5),
+                "real Field menu input commits the non-default Fireball configuration");
+            await Press(Key.Escape); await Press(Key.Escape);
+            FieldPosition(2, 5, "closing Magic Adjustment returns to the unchanged field");
+
             await EnterFieldEncounter();
             var encounterPosition = field.PlayerPosition;
             var equippedStats = player.EffectiveStats;
@@ -116,11 +126,28 @@ public partial class BattleScreen
             await Press(Key.E); await Press(Key.R);
             Check(game.Mode == GameMode.Battle && ui.Mode == ScreenMode.Menu, "E and R cannot open equipment or reset during battle");
             var beforeWip = ui.Session.MachineText;
-            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Water");
             Check(ui.Mode == ScreenMode.Wip, "existing nested battle commands retain their WIP flow");
             await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape);
             Check(ui.Session.MachineText == beforeWip, "WIP navigation consumes no battle action");
             await Capture(outputDirectory, "field-05-battle");
+
+            var fireballFirstEvent = ui.Session.Events.Length;
+            await Choose("MAGIC"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
+            Check(ui.Mode == ScreenMode.Targets && ui.Breadcrumb == "FIREBALL > CHOOSE TARGET",
+                "configured Fireball uses the shared battle target screen");
+            await Press(Key.Enter);
+            Check(ui.Session.View.Hero.Mp == 6, "Size 1.25 Output 1.25 Fireball costs exactly six MP");
+            Check(ui.Session.View.Enemies[0].Hp == 23, "Output 1.25 produces fifteen magical damage on Goblin");
+            var fireballEvents = ui.Session.Events.Skip(fireballFirstEvent).ToArray();
+            Check(fireballEvents.Count(e => e.Kind == "ManaChanged" && e.Source == 0 && e.Amount == -6) == 1,
+                "configured Fireball deducts MP exactly once");
+            Check(ui.Session.LastMessages.Contains("Size 1.25 | Output 1.25 | MP 6"),
+                "configured Fireball details are readable in battle");
+            Check(fireballEvents.Any(e => e.Kind == "ActionStarted" && e.Source != 0),
+                "enemies respond through the normal loop after configured Fireball");
+            await Capture(outputDirectory, "field-05-fireball");
+            await FinishMessages();
             await Choose("DEFEND");
             Check(ui.Session.View.Hero.Guarding && ui.Session.Events.Any(e => e.Kind == "GuardBlocked"), "existing Defend and enemy responses work in a field encounter");
             await FinishMessages();
@@ -137,6 +164,8 @@ public partial class BattleScreen
             Check(game.Mode == GameMode.Field && ReferenceEquals(field, game.State.Field), "victory returns to the same field instance");
             Check(field.PlayerPosition == encounterPosition, "victory preserves the encounter contact position");
             Check(ReferenceEquals(player, game.State.Player) && player.Hp == finalHp && player.Mp == finalMp, "victory applies HP and MP to the same player without healing");
+            Check(player.ChantlessMagic == new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 5),
+                "configured Fireball persists after returning from battle");
             Check(player.EffectiveStats == equippedStats && !player.InBattle, "equipment persists and the battle preparation lock is released");
             Check(field.Encounters.All(e => e.Defeated), "victory records the encounter as defeated in field state");
             await FieldDelay(0.28);

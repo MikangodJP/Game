@@ -85,13 +85,13 @@ Two consequences for this feature, both important:
 |---|---|---|
 | Field exploration, 19×11 fixed map, tile movement, collision | `Field.cs`, `FieldScreen.cs` | Working |
 | Field → Battle → Field loop with HP/MP/gear persistence | `GameState.cs`, `GameController.cs` | Working |
-| Battle: Attack / Defend / Run; 149 WIP leaves | `Menu.cs`, `HarnessController.cs` | Working |
+| Battle: Attack / Defend / Run / configured Fireball; 148 WIP leaves | `Menu.cs`, `HarnessController.cs` | Working |
 | Equipment preparation (4 slots, 4 items, live stat preview) | `HarnessController.cs`, `BattleScreen.DrawPreparation` | Working |
 | 7-stat model + equipment bonus resolution | `Stats.cs`, `Equipment.cs` | Working |
 | Event-log debug inspector (F2/F3) | `HarnessController`, `DrawMachineLog` | Working |
 | **Inventory** | — | **Does not exist.** `EquipmentChoices` reads the global `PrototypeEquipment.Items` array directly (`HarnessController.cs:27`) |
-| **Field menu** | — | **Does not exist.** `Key.Tab` is unbound |
-| Party, summons, magic, skills, settings | — | Do not exist in any form |
+| **Field menu** | `FieldMenuController.cs`, `MenuScreen.cs` | Working first visual slice |
+| Party, summons, skills, settings | Battle/Field menu taxonomies | WIP presentation only |
 
 ### 1.3 `GameMode` today
 
@@ -216,10 +216,11 @@ only rule is: *no floats, no half-pixels, no scaling other than the integer
 
 | Suite | Count | Relevant content |
 |---|---|---|
-| `Tests/` (core) | 58 | 12 stat, 11 equipment, 10 field/persistence; run in Debug **and** Release |
-| `VisualTests/` (presentation, headless) | 20 | includes traversal of all 149 WIP leaves and 5 field-loop tests |
-| `Visual/HarnessQa.cs` (in-engine) | 213 checks | real key/pad events, PNG capture, limited-palette check |
-| `Visual/FieldQa.cs` (in-engine) | 163 checks | full field loop through the normal entry point |
+| `Tests/` (core) | 65 | includes 7 Magic tests; run in Debug **and** Release |
+| `VisualTests/` (presentation, headless) | 37 | includes traversal of all 148 WIP leaves and 5 field-loop tests |
+| `Visual/HarnessQa.cs` (in-engine) | 239 checks | real key/pad events, PNG capture, Fireball and limited-palette checks |
+| `Visual/FieldQa.cs` (in-engine) | 183 checks | full field/configuration/battle loop through the normal entry point |
+| `Visual/MenuQa.cs` (in-engine) | 96 checks | real Field-menu input, renderer, bounds and palette checks |
 | `golden/battle-20260909.log` | 73 events | byte-exact, SHA256-pinned, `.gitattributes`-protected |
 
 ---
@@ -1321,6 +1322,16 @@ Fireball Base Damage 8 is scaled by Output, then existing Magic adds offense and
 half Resistance mitigates it. Size deliberately does not multiply single-target
 damage. Agility remains unused.
 
-This intermediate commit does not activate Battle casting. The existing
-`MAGIC > ELEMENTAL MAGIC > Fire` leaf and every Transformation Magic leaf remain
-WIP until the separately bisectable Battle integration commit.
+Battle's existing visible `MAGIC > ELEMENTAL MAGIC > Fire` leaf is now the typed
+entry point for the domain spell **Fireball**. It checks the centralized cost
+before opening the existing target screen. Insufficient MP produces a readable
+message without calling `TakeTurn`; canceling a target is likewise free. A legal
+cast builds one ability from the player-owned configuration, deducts MP once in
+the existing ability path, applies magical damage, and then uses the unchanged
+enemy-response loop. Its messages name Fireball and show Size, Output and MP cost.
+
+Only the Fire leaf was activated. Water and every other sibling remain WIP.
+`TRANSFORMATION MAGIC` still contains exactly Self Transformation, Beast
+Transformation, Material Transformation, Size Manipulation and Polymorph as WIP
+leaves; Fireball does not collapse or rename that taxonomy. Chanted casting,
+multi-target Size behavior and additional Base Magics remain future seams.

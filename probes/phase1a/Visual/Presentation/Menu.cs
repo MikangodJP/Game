@@ -1,13 +1,13 @@
 namespace Phase1A.Visual.Presentation;
 
-public enum MenuAction { None, Attack, Defend, Run }
-public enum ChoiceKind { None, Attack, Defend, Run, Wip }
+public enum MenuAction { None, Attack, Defend, Run, Fireball }
+public enum ChoiceKind { None, Attack, Defend, Run, Fireball, Wip }
 public sealed record MenuEntry(
     string Label, MenuEntry[]? Children = null,
     MenuAction Action = MenuAction.None, string? WipLabel = null);
 public readonly record struct MenuChoice(ChoiceKind Kind, string Label = "");
 
-// A disposable, presentation-only tree. Only the three functional choices can
+// A disposable, presentation-only tree. Only the functional choices can
 // become combat commands; selecting a WIP leaf leaves this menu exactly as it was.
 public sealed class BattleMenu
 {
@@ -59,6 +59,7 @@ public sealed class BattleMenu
             MenuAction.Attack => ChoiceKind.Attack,
             MenuAction.Defend => ChoiceKind.Defend,
             MenuAction.Run => ChoiceKind.Run,
+            MenuAction.Fireball => ChoiceKind.Fireball,
             _ => ChoiceKind.Wip
         };
         return new(kind, entry.WipLabel ?? entry.Label);
@@ -86,7 +87,11 @@ public sealed class BattleMenu
         new("ATTACK", Action: MenuAction.Attack),
         new("DEFEND", Action: MenuAction.Defend),
         new("MAGIC", [
-            Category("ELEMENTAL MAGIC", "Fire", "Water", "Ice", "Wind", "Earth", "Lightning", "Nature", "Composite Elements"),
+            new("ELEMENTAL MAGIC", [
+                new("Fire", Action: MenuAction.Fireball),
+                new("Water"), new("Ice"), new("Wind"), new("Earth"), new("Lightning"),
+                new("Nature"), new("Composite Elements")
+            ]),
             Category("RESTORATION MAGIC", "Healing", "Regeneration", "Purification", "Revival", "Restoration"),
             Category("ENHANCEMENT MAGIC", "Physical Enhancement", "Magical Enhancement", "Speed", "Defense", "Resistance", "Weapon Enhancement"),
             Category("WEAKENING MAGIC", "Stat Reduction", "Vulnerability", "Silence", "Binding", "Sleep", "Curse"),

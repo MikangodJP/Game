@@ -1,4 +1,7 @@
+using Phase1A;
 using Phase1A.Encounter;
+using Phase1A.Magic;
+using Phase1A.Preparation;
 using Phase1A.Rules;
 using Phase1A.Visual.Presentation;
 
@@ -71,14 +74,108 @@ var tests = new (string Name, Action Run)[]
         Equal(12, ui.Preparation.Mp);
         Check(!ui.Preparation.InBattle, "new preparation has no active battle");
     }),
-    ("All six unfinished roots and every leaf remain outside simulation", () =>
+    ("Fire is the typed Fireball action and Transformation Magic remains intact", () =>
+    {
+        var menu = new BattleMenu();
+        var magic = menu.Root.Single(entry => entry.Label == "MAGIC");
+        var magicChildren = magic.Children ?? throw new Exception("MAGIC children missing");
+        var elemental = magicChildren.Single(entry => entry.Label == "ELEMENTAL MAGIC");
+        var elementalChildren = elemental.Children ?? throw new Exception("ELEMENTAL MAGIC children missing");
+        var fire = elementalChildren.Single(entry => entry.Label == "Fire");
+        Equal(MenuAction.Fireball, fire.Action);
+        Equal("Fire", fire.Label);
+
+        var transformation = magicChildren.Single(entry => entry.Label == "TRANSFORMATION MAGIC");
+        var transformationChildren = transformation.Children ?? throw new Exception("TRANSFORMATION MAGIC children missing");
+        var expected = new[]
+        {
+            "Self Transformation", "Beast Transformation", "Material Transformation",
+            "Size Manipulation", "Polymorph"
+        };
+        Check(transformationChildren.Select(entry => entry.Label).SequenceEqual(expected),
+            "Transformation Magic taxonomy is unchanged");
+        Check(transformationChildren.All(entry => entry.Action == MenuAction.None && entry.Children is null),
+            "Transformation Magic leaves remain WIP");
+    }),
+    ("Affordable Fire casts the configured Fireball once before normal enemy responses", () =>
+    {
+        var ui = Started();
+        var firstEvent = ui.Session.Events.Length;
+        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Equal(ScreenMode.Targets, ui.Mode);
+        Equal("FIREBALL > CHOOSE TARGET", ui.Breadcrumb);
+        ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Messages, ui.Mode);
+        Equal(8, ui.Session.View.Hero.Mp);
+        Equal(25, ui.Session.View.Enemies[0].Hp);
+        Check(ui.Session.View.Hero.Hp < 80, "living enemies answer the cast");
+
+        var events = ui.Session.Events.Skip(firstEvent).ToArray();
+        Equal(1, events.Count(e => e.Kind == "ManaChanged" && e.Source == 0 && e.Target == 0 && e.Amount == -4));
+        var playerAction = Array.FindIndex(events, e => e.Kind == "ActionStarted" && e.Source == 0 && e.Detail == PrototypeMagic.Fireball.Id);
+        var playerDamage = Array.FindIndex(events, e => e.Kind == "Damaged" && e.Source == 0 && e.Target == 1);
+        var enemyAction = Array.FindIndex(events, e => e.Kind == "ActionStarted" && e.Source != 0);
+        Check(playerAction >= 0 && playerAction < playerDamage && playerDamage < enemyAction,
+            "Fireball resolves before the ordinary enemy response loop");
+        Check(ui.Session.LastMessages.Contains("Adventurer casts Fireball on Goblin!"), "domain spell name is visible");
+        Check(ui.Session.LastMessages.Contains("Size 1.00 | Output 1.00 | MP 4"), "configuration and exact cost are visible");
+    }),
+    ("Unaffordable Fire fails before targeting without spending a turn", () =>
+    {
+        var player = new CharacterPreparation(Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats, mp: 3);
+        var session = new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed)));
+        var ui = new HarnessController(player, session);
+        var beforeLog = session.MachineText;
+        var before = session.View;
+        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Equal(ScreenMode.Messages, ui.Mode);
+        Check(ui.BattleLines.Contains("Not enough MP."), "visible MP failure");
+        Equal(beforeLog, session.MachineText);
+        Equal(before.Hero, session.View.Hero);
+        Check(before.Enemies.SequenceEqual(session.View.Enemies), "enemy state is unchanged");
+        Equal(before.Finished, session.View.Finished);
+        DismissMessages(ui);
+        ui.Handle(UiInput.Back); ui.Handle(UiInput.Back);
+        Choose(ui, "ATTACK"); ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Messages, ui.Mode);
+        Check(session.View.Enemies[0].Hp < before.Enemies[0].Hp,
+            "the same player turn remains usable after the MP failure");
+    }),
+    ("Fireball target cancellation spends neither MP nor a turn", () =>
+    {
+        var ui = Started();
+        var beforeLog = ui.Session.MachineText;
+        Choose(ui, "MAGIC"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+        Equal(ScreenMode.Targets, ui.Mode);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.Menu, ui.Mode);
+        Equal("Fire", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
+        Equal(12, ui.Session.View.Hero.Mp);
+        Equal(beforeLog, ui.Session.MachineText);
+    }),
+    ("Battle adapter uses Output for Fireball damage and Size only for cost", () =>
+    {
+        var standard = MagicSession(new(PrototypeMagic.Fireball, 4, 4));
+        var large = MagicSession(new(PrototypeMagic.Fireball, 16, 4));
+        var strong = MagicSession(new(PrototypeMagic.Fireball, 4, 8));
+        Check(standard.SubmitFireball(new(PrototypeMagic.Fireball, 4, 4), 1), "standard Fireball accepted");
+        Check(large.SubmitFireball(new(PrototypeMagic.Fireball, 16, 4), 1), "large Fireball accepted");
+        Check(strong.SubmitFireball(new(PrototypeMagic.Fireball, 4, 8), 1), "strong Fireball accepted");
+        var standardDamage = standard.Events.Single(e => e.Kind == "Damaged" && e.Source == 0).Amount;
+        var largeDamage = large.Events.Single(e => e.Kind == "Damaged" && e.Source == 0).Amount;
+        var strongDamage = strong.Events.Single(e => e.Kind == "Damaged" && e.Source == 0).Amount;
+        Equal(standardDamage, largeDamage);
+        Check(strongDamage > standardDamage, "Output raises real battle damage");
+        Check(large.View.Hero.Mp < standard.View.Hero.Mp, "Size still raises real MP cost");
+    }),
+    ("All unfinished roots and their remaining leaves stay outside simulation", () =>
     {
         var ui = Started();
         var original = ui.Session.MachineText;
         var rootLabels = ui.Menu.Root.Select(e => e.Label).ToArray();
         Check(rootLabels.SequenceEqual(new[] { "ATTACK", "DEFEND", "MAGIC", "SUMMONING", "SKILLS", "SPECIAL", "ITEMS", "TACTICS", "RUN" }), "root hierarchy");
         var paths = LeafPaths(ui.Menu.Root).ToArray();
-        Equal(149, paths.Length);
+        Equal(148, paths.Length);
         foreach (var path in paths)
         {
             while (!ui.Menu.IsRoot) ui.Handle(UiInput.Back);
@@ -115,7 +212,7 @@ var tests = new (string Name, Action Run)[]
     ("WIP browsing cannot consume RNG or affect the next attack", () =>
     {
         var browsed = Started();
-        Choose(browsed, "MAGIC"); Choose(browsed, "ELEMENTAL MAGIC"); Choose(browsed, "Fire");
+        Choose(browsed, "MAGIC"); Choose(browsed, "ELEMENTAL MAGIC"); Choose(browsed, "Water");
         browsed.Handle(UiInput.Confirm); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back);
         Choose(browsed, "ATTACK"); browsed.Handle(UiInput.Confirm);
         var untouched = Started();
@@ -307,6 +404,12 @@ static HarnessController Started()
     var ui = new HarnessController();
     StartBattle(ui);
     return ui;
+}
+static BattleSession MagicSession(ChantlessMagicConfiguration configuration)
+{
+    var player = new CharacterPreparation(Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats);
+    Check(player.TryConfigureChantlessMagic(configuration), "test configuration accepted");
+    return new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed)));
 }
 static void StartBattle(HarnessController ui)
 {

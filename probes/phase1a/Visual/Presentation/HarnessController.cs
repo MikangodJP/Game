@@ -6,6 +6,7 @@ namespace Phase1A.Visual.Presentation;
 
 public enum ScreenMode { Preparation, EquipmentSlots, EquipmentItems, Menu, Targets, Messages, Wip, Ended, MachineLog }
 public enum UiInput { Up, Down, Left, Right, Confirm, Back, Menu, Debug, Restart }
+public enum TargetAction { None, Attack, Fireball }
 
 public sealed class HarnessController
 {
@@ -32,6 +33,7 @@ public sealed class HarnessController
     public BattleMenu Menu { get; } = new();
     public ScreenMode Mode { get; private set; }
     public int TargetIndex { get; private set; }
+    public TargetAction PendingTargetAction { get; private set; }
     public int DebugOffset { get; private set; }
     public string WipLabel { get; private set; } = "";
     public IReadOnlyList<string> BattleLines { get; private set; } = [];
@@ -41,7 +43,11 @@ public sealed class HarnessController
         ScreenMode.Preparation => "PREPARATION",
         ScreenMode.EquipmentSlots => "EQUIPMENT",
         ScreenMode.EquipmentItems => "EQUIPMENT > " + SelectedSlot,
-        ScreenMode.Targets => "ATTACK > CHOOSE TARGET",
+        ScreenMode.Targets => PendingTargetAction switch
+        {
+            TargetAction.Fireball => "FIREBALL > CHOOSE TARGET",
+            _ => "ATTACK > CHOOSE TARGET"
+        },
         _ => Menu.Breadcrumb
     };
     public HarnessController(ulong seed = Scenario.GoldenSeed)
@@ -111,12 +117,17 @@ public sealed class HarnessController
                 }
                 break;
             case ScreenMode.Targets:
-                if (input == UiInput.Back) Mode = ScreenMode.Menu;
+                if (input == UiInput.Back) { PendingTargetAction = TargetAction.None; Mode = ScreenMode.Menu; }
                 else if (input == UiInput.Left) TargetIndex = Math.Max(0, TargetIndex - 1);
                 else if (input == UiInput.Right) TargetIndex = Math.Min(Targets.Count, TargetIndex + 1);
                 else if (input == UiInput.Confirm)
                 {
-                    if (TargetIndex == Targets.Count) Mode = ScreenMode.Menu;
+                    if (TargetIndex == Targets.Count)
+                    {
+                        PendingTargetAction = TargetAction.None;
+                        Mode = ScreenMode.Menu;
+                    }
+                    else if (PendingTargetAction == TargetAction.Fireball) SubmitFireball(Targets[TargetIndex].Id);
                     else Submit(MenuAction.Attack, Targets[TargetIndex].Id);
                 }
                 break;
@@ -131,7 +142,20 @@ public sealed class HarnessController
                     var choice = Menu.Confirm();
                     switch (choice.Kind)
                     {
-                        case ChoiceKind.Attack: TargetIndex = 0; Mode = ScreenMode.Targets; break;
+                        case ChoiceKind.Attack:
+                            PendingTargetAction = TargetAction.Attack; TargetIndex = 0; Mode = ScreenMode.Targets;
+                            break;
+                        case ChoiceKind.Fireball:
+                            if (Session.CanSubmitFireball(Preparation.ChantlessMagic))
+                            {
+                                PendingTargetAction = TargetAction.Fireball; TargetIndex = 0; Mode = ScreenMode.Targets;
+                            }
+                            else
+                            {
+                                Session.ShowInsufficientFireball(Preparation.ChantlessMagic);
+                                messageOffset = 0; Mode = ScreenMode.Messages; ShowPage();
+                            }
+                            break;
                         case ChoiceKind.Defend: Submit(MenuAction.Defend); break;
                         case ChoiceKind.Run: Submit(MenuAction.Run); break;
                         case ChoiceKind.Wip: WipLabel = choice.Label; Mode = ScreenMode.Wip; break;
@@ -181,6 +205,17 @@ public sealed class HarnessController
     private void Submit(MenuAction action, int target = -1)
     {
         if (!Session.Submit(action, target)) return;
+        BeginMessagesAfterAction();
+    }
+    private void SubmitFireball(int target)
+    {
+        if (!Session.SubmitFireball(Preparation.ChantlessMagic, target)) return;
+        BeginMessagesAfterAction();
+    }
+    private void BeginMessagesAfterAction()
+    {
+        PendingTargetAction = TargetAction.None;
+        Menu.Reset();
         messageOffset = 0; Mode = ScreenMode.Messages; ShowPage();
     }
     private void ShowPage() => BattleLines = Session.LastMessages.Skip(messageOffset).Take(3).ToArray();
