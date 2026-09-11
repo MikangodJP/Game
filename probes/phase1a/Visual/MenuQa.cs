@@ -46,42 +46,14 @@ public partial class BattleScreen
             await Press(Key.Enter);
             Check(game.FieldMenu.Depth == 2 && game.FieldMenu.BuildView(game.State.Player).Breadcrumb == "MAGIC",
                 "Magic opens its child command frame");
+            Check(game.FieldMenu.CurrentEntries.Select(entry => entry.Label)
+                .SequenceEqual(["SPELLS", "INFORMATION", "BACK"]),
+                "Field Magic contains only Spells, Information, and Back");
             await MenuCapture(outputDirectory, "menu-01-magic", 2);
-            await MoveFieldMenuTo("ADJUSTMENT"); await Press(Key.Enter);
-            var adjustment = game.FieldMenu.BuildView(game.State.Player).ActivePanel;
-            Check(adjustment is { Kind: FieldMenuPanelKind.Adjustment } &&
-                adjustment.Adjustment is { BaseMagic: "FIREBALL", SizeMultiplier: "1.00", OutputMultiplier: "1.00", MpCost: 4 },
-                "Magic Adjustment opens with the committed Fireball configuration");
-            var emptyFifthSizeStep = await PixelAt(76, 92);
-            await Press(Key.Right);
-            Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel!.Adjustment!.SizeMultiplier == "1.25",
-                "Right changes Size by one exact quarter step");
-            Check(await PixelAt(76, 92) != emptyFifthSizeStep,
-                "the logical Size slider visibly fills its fifth step");
-            await Press(Key.Down); await Press(Key.Right);
-            var edited = game.FieldMenu.BuildView(game.State.Player).ActivePanel!.Adjustment!;
-            Check(edited.OutputMultiplier == "1.25" && edited.MpCost == 6,
-                "Output changes by one quarter and central MP preview updates");
-            await MenuCapture(outputDirectory, "menu-02-adjustment", 3, menuPalette: true);
-            await Press(Key.Escape);
-            Check(game.Mode == GameMode.Menu && game.FieldMenu.Depth == 2 &&
-                game.FieldMenu.BuildView(game.State.Player).ActivePanel is null,
-                "Escape cancels the Adjustment draft");
-            Check(game.State.Player.ChantlessMagic.SizeSteps == 4 && game.State.Player.ChantlessMagic.OutputSteps == 4,
-                "cancelled Adjustment leaves committed values unchanged");
-
-            await Press(Key.Enter); await Press(Key.Right); await Press(Key.Down); await Press(Key.Right);
-            await Press(Key.Down); await Press(Key.Enter);
-            Check(game.State.Player.ChantlessMagic.SizeSteps == 5 && game.State.Player.ChantlessMagic.OutputSteps == 5 &&
-                game.FieldMenu.BuildView(game.State.Player).ActivePanel is null,
-                "Apply commits both draft values and returns to Magic");
-            await Press(Key.Enter);
-            Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel!.Adjustment is { SizeSteps: 5, OutputSteps: 5 },
-                "reopened Adjustment starts from committed values");
-            await Press(Key.Escape);
             await MoveFieldMenuTo("INFORMATION"); await Press(Key.Enter);
             Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel is { Kind: FieldMenuPanelKind.Info },
                 "Magic Information is a passive explanatory panel");
+            await MenuCapture(outputDirectory, "menu-02-information", 3, menuPalette: true);
             await Press(Key.Enter);
             Check(game.Mode == GameMode.Menu && game.FieldMenu.Depth == 2 &&
                 game.FieldMenu.BuildView(game.State.Player).ActivePanel is null,

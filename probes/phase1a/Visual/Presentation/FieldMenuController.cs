@@ -1,4 +1,3 @@
-using Phase1A.Magic;
 using Phase1A.Preparation;
 
 namespace Phase1A.Visual.Presentation;
@@ -10,20 +9,11 @@ public sealed record FieldMenuWindowView(
     int SelectedIndex,
     int Columns);
 public sealed record FieldMenuStatusRow(string Label, string Value);
-public sealed record FieldMenuAdjustmentView(
-    string BaseMagic,
-    int SizeSteps,
-    string SizeMultiplier,
-    int OutputSteps,
-    string OutputMultiplier,
-    int MpCost,
-    int SelectedIndex);
 public sealed record FieldMenuPanelView(
     FieldMenuPanelKind Kind,
     string Title,
     IReadOnlyList<string> Lines,
-    IReadOnlyList<FieldMenuStatusRow> Rows,
-    FieldMenuAdjustmentView? Adjustment);
+    IReadOnlyList<FieldMenuStatusRow> Rows);
 public sealed record FieldMenuView(
     IReadOnlyList<FieldMenuWindowView> Windows,
     FieldMenuPanelView? ActivePanel,
@@ -39,8 +29,6 @@ public sealed class FieldMenuController
 
     private readonly List<Frame> frames = [];
     private FieldMenuNode? activePanel;
-    private ChantlessMagicConfiguration? adjustmentDraft;
-    private int adjustmentSelected;
 
     public IReadOnlyList<FieldMenuNode> CurrentEntries =>
         frames[^1].Node.Children ?? Array.Empty<FieldMenuNode>();
@@ -57,26 +45,12 @@ public sealed class FieldMenuController
         frames.Clear();
         frames.Add(new(FieldMenuCatalog.Root));
         activePanel = null;
-        adjustmentDraft = null;
-        adjustmentSelected = 0;
     }
 
     public void Close() => Open();
 
     public void Move(int dx, int dy)
     {
-        if (activePanel?.PanelKind == FieldMenuPanelKind.Adjustment)
-        {
-            adjustmentSelected = Math.Clamp(adjustmentSelected + dy, 0, 2);
-            if (adjustmentDraft is null || dx == 0) return;
-            if (adjustmentSelected == 0)
-                adjustmentDraft = adjustmentDraft.WithSizeSteps(
-                    QuarterStepMultiplier.Clamp(adjustmentDraft.SizeSteps + dx));
-            else if (adjustmentSelected == 1)
-                adjustmentDraft = adjustmentDraft.WithOutputSteps(
-                    QuarterStepMultiplier.Clamp(adjustmentDraft.OutputSteps + dx));
-            return;
-        }
         if (activePanel is not null) return;
         var column = SelectedColumn + dx;
         var row = SelectedRow + dy;
@@ -85,17 +59,8 @@ public sealed class FieldMenuController
         if (candidate < CurrentEntries.Count) frames[^1].SelectedIndex = candidate;
     }
 
-    public void Confirm(CharacterPreparation? player = null)
+    public void Confirm()
     {
-        if (activePanel?.PanelKind == FieldMenuPanelKind.Adjustment)
-        {
-            if (adjustmentSelected != 2) return;
-            if (player is null || adjustmentDraft is null || !player.TryConfigureChantlessMagic(adjustmentDraft))
-                throw new InvalidOperationException("A valid out-of-battle player is required to apply Magic Adjustment.");
-            activePanel = null;
-            adjustmentDraft = null;
-            return;
-        }
         if (activePanel is { PanelKind: FieldMenuPanelKind.Info or FieldMenuPanelKind.Placeholder })
         {
             activePanel = null;
@@ -115,16 +80,7 @@ public sealed class FieldMenuController
             return;
         }
         if (selected.PanelKind != FieldMenuPanelKind.None)
-        {
-            if (selected.PanelKind == FieldMenuPanelKind.Adjustment)
-            {
-                if (player is null)
-                    throw new InvalidOperationException("A player is required to open Magic Adjustment.");
-                adjustmentDraft = player.ChantlessMagic;
-                adjustmentSelected = 0;
-            }
             activePanel = selected;
-        }
     }
 
     public bool Back()
@@ -132,7 +88,6 @@ public sealed class FieldMenuController
         if (activePanel is not null)
         {
             activePanel = null;
-            adjustmentDraft = null;
             return false;
         }
         if (frames.Count > 1)
@@ -163,28 +118,11 @@ public sealed class FieldMenuController
         var rows = activePanel.PanelKind == FieldMenuPanelKind.Status
             ? StatusRows(player)
             : Array.Empty<FieldMenuStatusRow>();
-        var adjustment = activePanel.PanelKind == FieldMenuPanelKind.Adjustment
-            ? AdjustmentView()
-            : null;
         return new(
             activePanel.PanelKind,
             activePanel.Label,
             ReadOnly(activePanel.Lines ?? Array.Empty<string>()),
-            ReadOnly(rows),
-            adjustment);
-    }
-
-    private FieldMenuAdjustmentView AdjustmentView()
-    {
-        var draft = adjustmentDraft ?? throw new InvalidOperationException("Adjustment needs a draft configuration.");
-        return new(
-            draft.BaseMagic.DisplayName.ToUpperInvariant(),
-            draft.SizeSteps,
-            QuarterStepMultiplier.Format(draft.SizeSteps),
-            draft.OutputSteps,
-            QuarterStepMultiplier.Format(draft.OutputSteps),
-            ChantlessMagicCost.Calculate(draft),
-            adjustmentSelected);
+            ReadOnly(rows));
     }
 
     private static IReadOnlyList<FieldMenuStatusRow> StatusRows(CharacterPreparation player)

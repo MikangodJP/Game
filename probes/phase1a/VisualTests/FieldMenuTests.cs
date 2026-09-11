@@ -34,7 +34,7 @@ internal static class FieldMenuTests
             menu.Confirm();
             Equal(2, menu.Depth);
             Equal(1, menu.Columns);
-            SequenceEqual(["SPELLS", "ADJUSTMENT", "INFORMATION", "BACK"],
+            SequenceEqual(["SPELLS", "INFORMATION", "BACK"],
                 menu.CurrentEntries.Select(entry => entry.Label));
             Select(menu, "INFORMATION");
             Check(!menu.Back(), "child Back stays inside the menu");
@@ -55,29 +55,13 @@ internal static class FieldMenuTests
             Equal("SYSTEM", menu.CurrentEntries[menu.SelectedIndex].Label);
             Check(menu.BuildView(Player()).ActivePanel is null, "Back is navigation, not a leaf panel");
         }),
-        ("The interactive Adjustment panel dismisses before its child frame", () =>
-        {
-            var player = Player();
-            var menu = new FieldMenuController();
-            Select(menu, "MAGIC"); menu.Confirm(player);
-            Select(menu, "ADJUSTMENT"); menu.Confirm(player);
-            var panel = menu.BuildView(player).ActivePanel;
-            Equal(FieldMenuPanelKind.Adjustment, panel!.Kind);
-            Equal("ADJUSTMENT", panel.Title);
-            Check(!menu.Back(), "panel Back stays inside the menu");
-            Check(menu.BuildView(player).ActivePanel is null, "first Back dismisses the panel");
-            Equal(2, menu.Depth);
-            Equal("ADJUSTMENT", menu.CurrentEntries[menu.SelectedIndex].Label);
-            Check(!menu.Back(), "second Back pops the child frame");
-            Equal(1, menu.Depth);
-        }),
         ("Enter dismisses one passive Field panel without closing its parent", () =>
         {
             var game = new GameController();
             game.Handle(UiInput.Menu);
             game.Handle(UiInput.Right); // Magic.
             game.Handle(UiInput.Confirm);
-            game.Handle(UiInput.Down); game.Handle(UiInput.Down); // Information.
+            game.Handle(UiInput.Down); // Information.
             game.Handle(UiInput.Confirm);
             Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel is not null,
                 "Information opens a passive panel");
@@ -97,74 +81,12 @@ internal static class FieldMenuTests
             Equal(FieldMenuPanelKind.Status,
                 game.FieldMenu.BuildView(game.State.Player).ActivePanel!.Kind);
         }),
-        ("Magic Adjustment edits exact quarter-step draft values and clamps", () =>
-        {
-            var player = Player();
-            var menu = new FieldMenuController();
-            Select(menu, "MAGIC"); menu.Confirm(player);
-            Select(menu, "ADJUSTMENT"); menu.Confirm(player);
-
-            var initial = menu.BuildView(player).ActivePanel!.Adjustment!;
-            Equal("FIREBALL", initial.BaseMagic);
-            Equal(4, initial.SizeSteps); Equal("1.00", initial.SizeMultiplier);
-            Equal(4, initial.OutputSteps); Equal("1.00", initial.OutputMultiplier);
-            Equal(4, initial.MpCost); Equal(0, initial.SelectedIndex);
-
-            menu.Move(1, 0); menu.Move(1, 0); menu.Move(-1, 0);
-            var size = menu.BuildView(player).ActivePanel!.Adjustment!;
-            Equal(5, size.SizeSteps); Equal("1.25", size.SizeMultiplier);
-            Equal(new Phase1A.Magic.ChantlessMagicConfiguration(
-                Phase1A.Magic.PrototypeMagic.Fireball, 4, 4), player.ChantlessMagic);
-
-            for (var i = 0; i < 30; i++) menu.Move(-1, 0);
-            Equal(1, menu.BuildView(player).ActivePanel!.Adjustment!.SizeSteps);
-            for (var i = 0; i < 30; i++) menu.Move(1, 0);
-            Equal(16, menu.BuildView(player).ActivePanel!.Adjustment!.SizeSteps);
-
-            menu.Move(0, 1);
-            for (var i = 0; i < 30; i++) menu.Move(1, 0);
-            var maximum = menu.BuildView(player).ActivePanel!.Adjustment!;
-            Equal(16, maximum.OutputSteps); Equal("4.00", maximum.OutputMultiplier);
-            menu.Move(0, 1); menu.Move(0, 1);
-            Equal(2, menu.BuildView(player).ActivePanel!.Adjustment!.SelectedIndex);
-        }),
-        ("Magic Adjustment applies only on Apply and Escape cancels its draft", () =>
-        {
-            var player = Player();
-            var menu = new FieldMenuController();
-            Select(menu, "MAGIC"); menu.Confirm(player);
-            Select(menu, "ADJUSTMENT"); menu.Confirm(player);
-            menu.Move(1, 0);
-            menu.Confirm(player);
-            Check(menu.BuildView(player).ActivePanel?.Adjustment is not null,
-                "Enter on Size keeps the interactive panel open");
-            Equal(4, player.ChantlessMagic.SizeSteps);
-            Check(!menu.Back(), "Escape cancels Adjustment inside the menu");
-            Equal(4, player.ChantlessMagic.SizeSteps);
-
-            menu.Confirm(player);
-            menu.Move(1, 0); // Size 1.25.
-            menu.Move(0, 1); menu.Move(1, 0); menu.Move(1, 0); // Output 1.50.
-            var draft = menu.BuildView(player).ActivePanel!.Adjustment!;
-            Equal(5, draft.SizeSteps); Equal(6, draft.OutputSteps); Equal(7, draft.MpCost);
-            menu.Move(0, 1); menu.Confirm(player);
-
-            Check(menu.BuildView(player).ActivePanel is null, "Apply returns to Magic submenu");
-            Equal(5, player.ChantlessMagic.SizeSteps); Equal(6, player.ChantlessMagic.OutputSteps);
-            Equal(2, menu.Depth);
-            Equal("ADJUSTMENT", menu.CurrentEntries[menu.SelectedIndex].Label);
-
-            menu.Confirm(player);
-            var reopened = menu.BuildView(player).ActivePanel!.Adjustment!;
-            Equal(5, reopened.SizeSteps); Equal(6, reopened.OutputSteps);
-        }),
         ("Every reachable non-Back leaf produces a truthful panel", () =>
         {
             var cases = new (string[] Path, FieldMenuPanelKind Kind, string? FirstLine)[]
             {
                 (["ITEMS"], FieldMenuPanelKind.Placeholder, "NO INVENTORY AVAILABLE."),
                 (["MAGIC", "SPELLS"], FieldMenuPanelKind.Placeholder, "SPELLS ARE NOT IMPLEMENTED YET."),
-                (["MAGIC", "ADJUSTMENT"], FieldMenuPanelKind.Adjustment, null),
                 (["MAGIC", "INFORMATION"], FieldMenuPanelKind.Info,
                     "CHANTLESS MAGIC CAN MODIFY THE SIZE AND OUTPUT OF A LEARNED BASE MAGIC."),
                 (["EQUIP"], FieldMenuPanelKind.Info, "EQUIPMENT OPENS FROM THE FIELD WITH E."),
@@ -178,7 +100,7 @@ internal static class FieldMenuTests
             {
                 var player = Player();
                 var menu = new FieldMenuController();
-                foreach (var label in item.Path) { Select(menu, label); menu.Confirm(player); }
+                foreach (var label in item.Path) { Select(menu, label); menu.Confirm(); }
                 var panel = menu.BuildView(player).ActivePanel;
                 Check(panel is not null, "leaf must produce a panel: " + string.Join(" > ", item.Path));
                 Equal(item.Kind, panel!.Kind);

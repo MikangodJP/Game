@@ -1,6 +1,6 @@
 namespace Phase1A.Visual.Presentation;
 
-public enum FieldMenuPanelKind { None, Info, Placeholder, Status, Adjustment }
+public enum FieldMenuPanelKind { None, Info, Placeholder, Status }
 
 public sealed record FieldMenuNode(
     string Id,
@@ -22,7 +22,6 @@ public static class FieldMenuCatalog
             Panel("items", "ITEMS", FieldMenuPanelKind.Placeholder, "NO INVENTORY AVAILABLE."),
             Branch("magic", "MAGIC",
                 Panel("spells", "SPELLS", FieldMenuPanelKind.Placeholder, "SPELLS ARE NOT IMPLEMENTED YET."),
-                Panel("adjustment", "ADJUSTMENT", FieldMenuPanelKind.Adjustment),
                 Panel("information", "INFORMATION", FieldMenuPanelKind.Info,
                     "CHANTLESS MAGIC CAN MODIFY THE SIZE AND OUTPUT OF A LEARNED BASE MAGIC."),
                 Back),
