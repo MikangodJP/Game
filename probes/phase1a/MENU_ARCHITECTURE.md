@@ -85,7 +85,7 @@ Two consequences for this feature, both important:
 |---|---|---|
 | Field exploration, 19×11 fixed map, tile movement, collision | `Field.cs`, `FieldScreen.cs` | Working |
 | Field → Battle → Field loop with HP/MP/gear persistence | `GameState.cs`, `GameController.cs` | Working |
-| Battle: Attack / Defend / Run / configured Fireball; 148 WIP leaves | `Menu.cs`, `HarnessController.cs` | Working |
+| Battle: Attack / Defend / Run / Battle-adjusted Fireball; 149 WIP leaves | `Menu.cs`, `HarnessController.cs` | Working |
 | Equipment preparation (4 slots, 4 items, live stat preview) | `HarnessController.cs`, `BattleScreen.DrawPreparation` | Working |
 | 7-stat model + equipment bonus resolution | `Stats.cs`, `Equipment.cs` | Working |
 | Event-log debug inspector (F2/F3) | `HarnessController`, `DrawMachineLog` | Working |
@@ -217,10 +217,10 @@ only rule is: *no floats, no half-pixels, no scaling other than the integer
 | Suite | Count | Relevant content |
 |---|---|---|
 | `Tests/` (core) | 65 | includes 7 Magic tests; run in Debug **and** Release |
-| `VisualTests/` (presentation, headless) | 37 | includes traversal of all 148 WIP leaves and 5 field-loop tests |
-| `Visual/HarnessQa.cs` (in-engine) | 239 checks | real key/pad events, PNG capture, Fireball and limited-palette checks |
+| `VisualTests/` (presentation, headless) | 36 | includes traversal of all 149 WIP leaves and 5 field-loop tests |
+| `Visual/HarnessQa.cs` (in-engine) | 264 checks | real key/pad events, PNG capture, Battle adjustment, Fireball and limited-palette checks |
 | `Visual/FieldQa.cs` (in-engine) | 183 checks | full field/configuration/battle loop through the normal entry point |
-| `Visual/MenuQa.cs` (in-engine) | 96 checks | real Field-menu input, renderer, bounds and palette checks |
+| `Visual/MenuQa.cs` (in-engine) | 87 checks | real Field-menu input, renderer, bounds and palette checks |
 | `golden/battle-20260909.log` | 73 events | byte-exact, SHA256-pinned, `.gitattributes`-protected |
 
 ---
@@ -344,7 +344,7 @@ this slice to leave Battle rendering untouched.
 
 ```
 FieldMenuNode
-  Id          stable string identity, e.g. "menu.magic.adjustment"
+  Id          stable string identity, e.g. "menu.magic.spells"
   Label       display text
   Children    FieldMenuNode[]?   — present ⇒ this node opens a child command window
   Panel       MenuPanelKind      — what a leaf shows when confirmed
@@ -410,7 +410,7 @@ committed to. One is not.
 | Command | Evidence of plausible future responsibility | Verdict |
 |---|---|---|
 | **Items** | `WORLD_ARCHITECTURE.md` **D6** approves a real inventory; §17 Stage 6 builds it; battle root already has an `ITEMS` category with 9 leaves | **Keep** |
-| **Magic** | `Menu.cs:88-99` — a 10-category magic tree already exists in battle; "Magic Adjustment" is an explicit brief requirement | **Keep** |
+| **Magic** | Battle has a complete Magic taxonomy; Field exposes only Spells and Information in this slice | **Keep** |
 | **Equipment** | Fully implemented today (`EquipmentSlot`, `EquipmentLoadout`, preparation screen) | **Keep** |
 | **Status** | 7-stat model live via `CharacterPreparation.EffectiveStats` | **Keep** |
 | **System** | `WORLD_ARCHITECTURE.md` §17 Stage 9 — `System → For Testing → Give Test Item` | **Keep** |
@@ -866,7 +866,7 @@ coupling the two.
 FIELD ──Tab──▶ MENU (root, 3×2, cursor on ITEMS)
                  │
                  ├─ ITEMS   → Placeholder: "INVENTORY IS NOT IMPLEMENTED YET."
-                 ├─ MAGIC   → child command window: SPELLS · ADJUSTMENT · INFORMATION · BACK
+                 ├─ MAGIC   → child command window: SPELLS · INFORMATION · BACK
                  │              each leaf → Placeholder
                  ├─ EQUIP   → Info panel: "EQUIPMENT OPENS FROM THE FIELD WITH E."  (§13.3)
                  ├─ STATUS  → StatusSheet: REAL live values
@@ -1099,7 +1099,7 @@ question definitively on the owner's own engine build.
 | — | Root submenus vertical | **APPROVED** |
 | — | Contextual window anchoring strategy (§10.1) | **APPROVED** |
 | — | `STATUS` shows real existing stats in slice 1 | **APPROVED** |
-| — | `MAGIC` exposes Spells / Adjustment / Information as demo entries | **APPROVED** |
+| — | `MAGIC` exposes Spells / Information as demo entries | **APPROVED; Adjustment removed by later correction** |
 | — | `SYSTEM` exposes Settings / For Testing as demo entries | **APPROVED** |
 | — | No real Magic, Settings, Inventory or For Testing functionality | **APPROVED** |
 | — | Every non-functional leaf produces a visible placeholder or disabled state | **APPROVED** |
@@ -1305,16 +1305,19 @@ and the unified gate covers core, presentation, battle, field, and menu QA.**
 
 ## 21. Chantless Magic V1 extension
 
-The Field `MAGIC > ADJUSTMENT` placeholder is now a transactional editor for the
-player-owned Fireball configuration. `CharacterPreparation` owns a read-only
-learned Base Magic list (Fireball by default) and one authoritative
-`ChantlessMagicConfiguration`. Menu state owns only a temporary draft.
+The Field `MAGIC` branch contains only Spells, Information and Back. It owns no
+cast editor, draft, or committed Magic configuration. Passive Info/Placeholder
+panels accept Enter or Escape for one-layer dismissal.
 
-Size and Output are exact integer quarter steps `1..16`, displayed as
-`0.25..4.00`, with default `4 = 1.00`. Apply commits; Escape cancels. The retro
-screen draws two 16-cell logical sliders without a mouse or new palette values.
-Passive Info/Placeholder panels now accept Enter or Escape for one-layer
-dismissal; Adjustment retains explicit Enter-on-Apply behavior.
+Battle `MAGIC` first contains Chantless and Chant. Chant is an honest passive
+WIP message. Chantless wraps the complete existing ten-category Magic taxonomy,
+including the unchanged five-leaf Transformation Magic branch.
+
+Selecting `CHANTLESS > ELEMENTAL MAGIC > Fire` opens the transactional Battle
+cast editor. Size and Output are exact integer quarter steps `1..16`, displayed
+as `0.25..4.00`, with default `4 = 1.00`. The Battle screen draws two 16-cell
+sliders in a fixed black/white modal. Escape discards the draft and returns to
+Fire; selecting Cast validates MP before opening the existing target picker.
 
 One cost calculator implements
 `ceil(BaseMpCost × Output × (0.5 + 0.5 × Size))` with Fireball Base MP 4.
@@ -1322,13 +1325,17 @@ Fireball Base Damage 8 is scaled by Output, then existing Magic adds offense and
 half Resistance mitigates it. Size deliberately does not multiply single-target
 damage. Agility remains unused.
 
-Battle's existing visible `MAGIC > ELEMENTAL MAGIC > Fire` leaf is now the typed
-entry point for the domain spell **Fireball**. It checks the centralized cost
-before opening the existing target screen. Insufficient MP produces a readable
-message without calling `TakeTurn`; canceling a target is likewise free. A legal
-cast builds one ability from the player-owned configuration, deducts MP once in
-the existing ability path, applies magical damage, and then uses the unchanged
-enemy-response loop. Its messages name Fireball and show Size, Output and MP cost.
+The visible Fire leaf is the typed entry point for the domain spell **Fireball**.
+Insufficient MP produces a readable message without calling `TakeTurn`, then
+returns to the intact Battle draft; canceling a target also returns to that
+draft. A legal cast builds one ability from the draft, deducts MP once in the
+existing ability path, applies magical damage, and then uses the unchanged enemy
+response loop. Its messages name Fireball and show Size, Output and MP cost.
+
+`CharacterPreparation` stores last-successful configurations by stable spell ID.
+Only a successful submission records the Fireball draft. Adjustment cancellation,
+target cancellation, insufficient MP, invalid/dead targets and aborted casts do
+not update it; the saved value seeds the same spell in the same or a later battle.
 
 Only the Fire leaf was activated. Water and every other sibling remain WIP.
 `TRANSFORMATION MAGIC` still contains exactly Self Transformation, Beast

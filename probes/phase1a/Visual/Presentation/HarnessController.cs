@@ -173,7 +173,7 @@ public sealed class HarnessController
                             PendingTargetAction = TargetAction.Attack; TargetIndex = 0; Mode = ScreenMode.Targets;
                             break;
                         case ChoiceKind.Fireball:
-                            magicDraft = Preparation.ChantlessMagic;
+                            magicDraft = Preparation.LastUsedChantlessMagic(PrototypeMagic.Fireball);
                             magicAdjustmentSelected = 0;
                             Mode = ScreenMode.MagicAdjustment;
                             break;
@@ -238,6 +238,8 @@ public sealed class HarnessController
     {
         var draft = magicDraft ?? throw new InvalidOperationException("Fireball targeting requires an adjustment draft.");
         if (!Session.SubmitFireball(draft, target)) return;
+        if (!Preparation.TryRememberSuccessfulChantlessMagic(draft))
+            throw new InvalidOperationException("A resolved Fireball must belong to the active player battle.");
         BeginMessagesAfterAction();
     }
     private void BeginMessagesAfterAction()

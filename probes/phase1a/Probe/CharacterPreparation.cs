@@ -10,13 +10,13 @@ public sealed class CharacterPreparation
     private BattleState? activeBattle;
     private string? activeInstanceId;
     private bool coordinatorOwnsCompletion;
+    private readonly Dictionary<string, ChantlessMagicConfiguration> lastUsedChantlessMagic;
     public CharacterStats BaseStats { get; }
     public CharacterStats EffectiveStats => StatResolver.Resolve(BaseStats, equipment: Loadout.Bonuses);
     public int Hp { get; private set; }
     public int Mp { get; private set; }
     public EquipmentLoadout Loadout { get; private set; } = EquipmentLoadout.Empty;
     public IReadOnlyList<BaseMagicDefinition> KnownBaseMagics { get; }
-    public ChantlessMagicConfiguration ChantlessMagic { get; private set; }
     public bool InBattle => activeBattle is not null && (coordinatorOwnsCompletion || !activeBattle.IsFinished);
 
     public CharacterPreparation(CharacterStats baseStats, int? hp = null, int? mp = null)
@@ -24,19 +24,30 @@ public sealed class CharacterPreparation
         baseStats.Validate();
         BaseStats = baseStats;
         KnownBaseMagics = Array.AsReadOnly(new[] { PrototypeMagic.Fireball });
-        ChantlessMagic = new(PrototypeMagic.Fireball,
-            QuarterStepMultiplier.DefaultSteps, QuarterStepMultiplier.DefaultSteps);
+        lastUsedChantlessMagic = KnownBaseMagics.ToDictionary(
+            magic => magic.Id,
+            magic => new ChantlessMagicConfiguration(
+                magic, QuarterStepMultiplier.DefaultSteps, QuarterStepMultiplier.DefaultSteps));
         Hp = hp ?? baseStats.MaxHp;
         Mp = mp ?? baseStats.MaxMp;
         if (Hp < 0 || Hp > baseStats.MaxHp) throw new ArgumentOutOfRangeException(nameof(hp));
         if (Mp < 0 || Mp > baseStats.MaxMp) throw new ArgumentOutOfRangeException(nameof(mp));
     }
 
-    public bool TryConfigureChantlessMagic(ChantlessMagicConfiguration configuration)
+    public ChantlessMagicConfiguration LastUsedChantlessMagic(BaseMagicDefinition baseMagic)
+    {
+        ArgumentNullException.ThrowIfNull(baseMagic);
+        if (!KnownBaseMagics.Contains(baseMagic))
+            throw new ArgumentException("Base Magic must be known by this player.", nameof(baseMagic));
+        return lastUsedChantlessMagic[baseMagic.Id];
+    }
+
+    // The battle coordinator calls this only after its submitted cast resolves.
+    public bool TryRememberSuccessfulChantlessMagic(ChantlessMagicConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        if (InBattle || !KnownBaseMagics.Contains(configuration.BaseMagic)) return false;
-        ChantlessMagic = configuration;
+        if (activeBattle is null || !KnownBaseMagics.Contains(configuration.BaseMagic)) return false;
+        lastUsedChantlessMagic[configuration.BaseMagic.Id] = configuration;
         return true;
     }
 

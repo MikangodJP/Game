@@ -1,40 +1,40 @@
 # Chantless Magic V1 Design
 
-**Status:** Approved 2026-09-11
+**Status:** Approved correction 2026-09-11
 
-**Goal:** Deliver one persistent, configurable, chantless Fireball from the Field control menu through normal Battle resolution without changing chanted casting, action priority, or Transformation Magic.
+**Goal:** Deliver one configurable chantless Fireball whose cast is adjusted inside Battle and whose last successfully used values persist with the player.
 
 ## Scope
 
-This slice contains two changes:
+This slice provides one real Base Magic, Fireball, plus the Battle UI and persistence needed to adjust and cast it. Chanted casting, interruption, enemy-first resolution, area targeting, known-form efficiency, spell learning, multiple spells, elemental resistance, and progression remain out of scope.
 
-1. Enter dismisses passive Field-menu Info and Placeholder panels one layer, matching Escape. Interactive panels retain their own Enter behavior.
-2. The player can configure and cast one chantless Base Magic: Fireball.
+The Field control menu is independent of Battle casting. `MAGIC` on the Field contains exactly `Spells / Information / Back`; it has no adjustment editor or cast configuration state. Passive Field Info and Placeholder panels remain dismissible with Enter or Escape.
 
-Chanted casting, interruption, enemy-first resolution, area targeting, known-form efficiency, spell learning, multiple spells, elemental resistance, and progression remain out of scope.
+## Battle Taxonomy
 
-## Repository Integration Choice
+Battle `MAGIC` first contains:
 
-The existing Battle hierarchy remains intact. Only the current WIP leaf at `MAGIC > ELEMENTAL MAGIC > Fire` becomes functional. The visible leaf may stay labelled `Fire` to preserve the existing elemental taxonomy, but the domain definition, stable ID, ability, messages, and tests identify the spell as `Fireball`.
+1. `CHANTLESS`
+2. `CHANT`
+3. the automatically appended `Back`
 
-The existing `TRANSFORMATION MAGIC` category and its five WIP leaves remain byte-for-byte equivalent in structure and behavior. No general Battle-menu reorganization is permitted.
+`CHANTLESS` contains the complete existing ten-category Magic taxonomy. The visible `ELEMENTAL MAGIC > Fire` leaf is the entry point for the domain spell **Fireball**. The visible element label does not define the spell's identity: its definition, stable ID, ability, messages, persistence key, and tests all use Fireball.
 
-Rejected alternatives:
+`CHANT` is a passive WIP leaf displaying `Chanted magic is not implemented yet.` Enter or Escape dismisses it without consuming a turn.
 
-- Adding a new Battle `CHANTLESS` category would restructure the existing ten-category Magic tree before chanted casting exists.
-- Building a generic multi-form spell framework would add unused chant, AoE, and efficiency machinery.
-- Keeping separate Field and Battle configurations would violate persistent single ownership.
+`TRANSFORMATION MAGIC` remains a category under `CHANTLESS` with exactly Self Transformation, Beast Transformation, Material Transformation, Size Manipulation, and Polymorph. Those leaves retain their existing WIP behavior.
 
 ## Domain Model and Ownership
 
-`CharacterPreparation` remains the authoritative persistent player object. It owns:
+`CharacterPreparation` owns the persistent player state:
 
 - a read-only learned Base Magic collection containing Fireball by default;
-- one current `ChantlessMagicConfiguration`;
-- validation that configurations refer to a learned Base Magic;
-- a battle lock preventing configuration changes while its encounter is active.
+- last-successfully-used chantless configurations keyed by stable Base Magic ID;
+- validation that saved configurations use the exact learned Base Magic definition.
 
-`BaseMagicDefinition` requires a stable ID, display name, base MP cost, and base damage. Fireball is the first literal definition. `ChantlessMagicConfiguration` requires a non-null Base Magic and valid Size and Output quarter-step values. Battle reads the player-owned configuration; it does not own a second authoritative copy.
+This is deliberately spell-specific rather than one universal Size/Output pair. Fireball's first-use configuration is Size `1.00`, Output `1.00`.
+
+`HarnessController` owns only the current cast draft. Opening Fire copies Fireball's last-successfully-used configuration. Arrow input mutates only that draft. A successful `BattleSession.SubmitFireball` result records the draft; no earlier navigation state can write persistent values.
 
 ## Quarter-Step Representation
 
@@ -44,11 +44,11 @@ Size and Output are integer quarter steps:
 - maximum `16` = `4.00`
 - default `4` = `1.00`
 
-One central quarter-step utility validates, formats, and converts the values. UI and Battle do not repeat division-by-four logic. Display uses two decimal places and invariant formatting. Cost and damage calculations use integer/rational arithmetic so binary floating-point artifacts cannot enter state, UI, or tests.
+One central utility validates, clamps, formats, and converts the values. Display uses two decimal places and invariant formatting. Rules use integer/rational arithmetic so binary floating-point artifacts cannot enter state, UI, or tests.
 
 ## MP Cost
 
-One dedicated calculator implements:
+One calculator implements:
 
 ```text
 ceil(BaseMpCost × Output × (0.5 + 0.5 × Size))
@@ -60,67 +60,44 @@ For quarter steps `S` and `O`, the exact equivalent is:
 ceil(BaseMpCost × O × (4 + S) / 32)
 ```
 
-The result is at least 1. Fireball's base MP cost is 4. The Field preview and Battle consumption call the same calculator.
+The result is at least 1. Fireball's base MP cost is 4. The Battle adjustment and ability consumption use this same calculator.
 
 ## Fireball Damage
 
-Fireball's centralized base damage is 8, placing its default hit near the existing useful Strike range. Output scales base power; Size does not affect single-target damage:
+Fireball's base damage is 8. Output scales base power; Size does not affect its current single target:
 
 ```text
 scaled base = ceil(BaseDamage × OutputSteps / 4)
 damage = max(1, scaled base + caster Magic - floor(target Resistance / 2))
 ```
 
-This adds the smallest explicit magical-damage path to the existing effect pipeline by using the already-defined Magic and Resistance stats. Existing physical and prototype damage paths remain unchanged. Existing guard handling remains the common post-mitigation behavior.
+Existing physical paths and guard handling remain unchanged.
 
-## Field Adjustment Interaction
+## Battle Adjustment Interaction
 
-`MAGIC > Adjustment` becomes an interactive panel with three selectable rows:
+Selecting `MAGIC > CHANTLESS > ELEMENTAL MAGIC > Fire` opens an opaque black, one-pixel-white-border modal inside the native 320×240 Battle screen. It displays Method `CHANTLESS`, Base `FIREBALL`, Size, Output, centralized MP cost, current MP, two 16-cell sliders, and `CAST`.
 
-1. Size
-2. Output
-3. Apply
+The selectable rows are Size, Output, and Cast. Up/Down clamp across those rows. Left/Right changes the selected numeric row by one exact quarter step and clamps at `0.25..4.00`. Enter acts only on Cast. Escape discards the current draft and returns to the still-selected Fire leaf.
 
-Base displays Fireball read-only. Up/Down clamp across the three rows. Left/Right change the selected numeric row exactly one quarter step and clamp at 0.25/4.00. A 16-cell, keyboard-only pixel slider reflects the exact step count. MP Cost updates from the central calculator.
+Cast validates affordability before target selection:
 
-Opening the panel copies the committed configuration into a controller-owned draft. Enter on Apply validates and commits the draft, closes only the Adjustment panel, and returns to the Magic submenu. Escape discards the draft and returns to the Magic submenu. Enter on Size or Output does nothing. No draft mutation reaches the player until Apply.
-
-The Information leaf becomes a concise passive Info panel explaining chantless size/output manipulation. Enter or Escape dismisses it one layer without closing the Field control menu.
-
-## Battle Flow
-
-Selecting `MAGIC > ELEMENTAL MAGIC > Fire` performs an affordability check using the current player-owned configuration before target selection when the existing presentation flow allows it.
-
-- If MP is insufficient, the player sees `Not enough MP.` immediately, no target picker opens, no action or enemy turn occurs, HP/MP stay unchanged, and the Battle menu remains valid.
+- If MP is insufficient, Battle displays `Not enough MP.` without opening targets or changing HP, MP, events, enemy actions, or last-used state. Enter or Escape returns to the same adjustment with its draft and selected row intact, allowing correction.
 - If MP is sufficient, the established living-enemy target picker opens.
-- Confirming a target builds the Fireball ability from the same configuration, submits it through normal player-first `BattleState.TakeTurn`, deducts MP once, applies magical damage, then runs the existing enemy responses.
-- Cancelling targeting spends nothing and returns to the Fire leaf selection.
+- Escape from targeting returns to the same adjustment with its draft intact. A subsequent Escape from adjustment discards it and returns to Fire.
+- Confirming a legal target builds Fireball from the draft, deducts MP once through the existing ability path, applies Output-scaled magical damage, then runs the normal enemy responses.
 
-The deterministic machine events retain the stable Fireball ability ID, MP delta, damage, and normal turn order. Readable Battle messages identify Fireball and include Size, Output, and MP Cost from the submitted configuration.
-
-No action-order reversal, cast delay, or interruption state is introduced. A future chanted implementation can add a separate command-resolution policy without changing the chantless configuration or calculators.
+Last-used state changes only after that successful submission. Adjustment cancellation, target cancellation, insufficient MP, invalid/dead targets, and aborted casts do not update it. Reopening Fire in the same or a later battle copies the saved successful values.
 
 ## Testing and QA
 
-Test-first coverage includes:
+Test-first coverage includes Field menu independence, the Chantless/Chant hierarchy, the exact Chant WIP message, complete Transformation taxonomy, exact quarter steps and clamps, draft cancellation, target cancellation, retained insufficient-MP drafts, unchanged failed submissions, same/later-battle persistence, central cost, Output damage, Size cost-only behavior, one MP deduction, and player-first enemy response.
 
-- passive Field Info/Placeholder Enter and Escape dismissal;
-- exact quarter-step defaults, changes, clamps, conversion, and formatting;
-- required Base Magic and default learned Fireball;
-- Adjustment Apply/cancel transactions and persistence across Field/Battle/Field;
-- exact MP examples, limits, monotonicity, and preview/execution identity;
-- Fireball damage, Output influence, Size non-influence, single MP deduction, and player-first enemy response;
-- pre-target insufficient-MP failure with no target picker, damage, resource mutation, or enemy action;
-- preservation of Attack, Defend, Run, all Transformation Magic leaves, and the golden fixture;
-- Menu QA rendering, slider change, Apply, cancel, viewport bounds, and palette;
-- Battle and Field engine QA for casting and persistence.
+Godot QA drives real keyboard/controller events and captures the Battle method tree, Chant WIP, adjustment modal, slider changes, MP cost, target return, fixed bounds, and black/white modal palette. Menu QA confirms Field Adjustment is absent.
 
-The final gate is `pwsh ./probes/phase1a/launch-visual.ps1 -Verify`, followed by the requested normal-game acceptance flow.
+The final gate is `pwsh ./probes/phase1a/launch-visual.ps1 -Verify`, followed by the normal-game acceptance flow.
 
-## Commit Boundaries
+## Correction Commit Boundaries
 
-1. `fix: allow enter to dismiss menu info panels`
-2. `feat: add chantless magic configuration`
-3. `feat: cast configured fireball in battle`
-
-No additional implementation or documentation commit is added; supporting docs are included with the relevant boundary.
+1. `fix: remove field magic adjustment`
+2. `feat: adjust chantless magic during battle`
+3. `feat: remember last successful magic configuration`

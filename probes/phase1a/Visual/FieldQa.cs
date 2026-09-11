@@ -161,6 +161,9 @@ public partial class BattleScreen
             Check(game.Mode == GameMode.Field && ReferenceEquals(field, game.State.Field), "victory returns to the same field instance");
             Check(field.PlayerPosition == encounterPosition, "victory preserves the encounter contact position");
             Check(ReferenceEquals(player, game.State.Player) && player.Hp == finalHp && player.Mp == finalMp, "victory applies HP and MP to the same player without healing");
+            Check(player.LastUsedChantlessMagic(PrototypeMagic.Fireball) ==
+                new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 5),
+                "successful Battle adjustment persists as Fireball's last-used configuration");
             Check(player.EffectiveStats == equippedStats && !player.InBattle, "equipment persists and the battle preparation lock is released");
             Check(field.Encounters.All(e => e.Defeated), "victory records the encounter as defeated in field state");
             await FieldDelay(0.28);

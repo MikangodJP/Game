@@ -125,6 +125,9 @@ public partial class BattleScreen
             Check(ui.Mode == ScreenMode.MagicAdjustment && ui.MagicAdjustment is { SizeSteps: 5, OutputSteps: 5 } &&
                 ui.Session.MachineText == untouched && ui.Session.View.Hero.Mp == 12,
                 "Fireball target Back preserves the draft without a turn or MP cost");
+            Check(ui.Preparation.LastUsedChantlessMagic(PrototypeMagic.Fireball) ==
+                new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+                "target cancellation does not update Fireball's last-used configuration");
             await Press(Key.Escape); await Press(Key.Escape);
             await Choose("TRANSFORMATION MAGIC"); await Choose("Self Transformation");
             Check(ui.Mode == ScreenMode.Wip && ui.WipLabel == "Self Transformation",
@@ -184,6 +187,9 @@ public partial class BattleScreen
             Check(ui.Session.LastMessages.Contains("Adventurer casts Fireball on Goblin!") &&
                 ui.Session.LastMessages.Contains("Size 1.00 | Output 1.00 | MP 4"),
                 "Fireball messages expose domain identity, configuration, and cost");
+            Check(ui.Preparation.LastUsedChantlessMagic(PrototypeMagic.Fireball) ==
+                new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+                "successful Fireball records its exact last-used configuration");
             await Capture(outputDirectory, "06-fireball");
             await FinishMessages(); await Choose("RUN");
             Check(ui.Session.View.Outcome == Phase1A.Encounter.Outcome.Fled, "Run ends with Fled");

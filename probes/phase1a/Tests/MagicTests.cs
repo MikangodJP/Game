@@ -14,16 +14,18 @@ internal static class MagicTests
             var player = Player();
             Equal(1, player.KnownBaseMagics.Count);
             Equal(PrototypeMagic.Fireball, player.KnownBaseMagics.Single());
-            Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4), player.ChantlessMagic);
+            Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+                player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
             Throws(() => new ChantlessMagicConfiguration(null!, 4, 4));
 
             var unknown = new BaseMagicDefinition("fixture:magic.unknown", "Unknown", 2, 3);
-            var original = player.ChantlessMagic;
-            Check(!player.TryConfigureChantlessMagic(new(unknown, 5, 6)), "unlearned Base Magic rejected");
+            Throws(() => player.LastUsedChantlessMagic(unknown));
+            var original = player.LastUsedChantlessMagic(PrototypeMagic.Fireball);
+            Check(!player.TryRememberSuccessfulChantlessMagic(new(unknown, 5, 6)), "unlearned Base Magic rejected");
             var forged = new BaseMagicDefinition(PrototypeMagic.Fireball.Id, "Fireball", 1, 999);
-            Check(!player.TryConfigureChantlessMagic(new(forged, 5, 6)),
+            Check(!player.TryRememberSuccessfulChantlessMagic(new(forged, 5, 6)),
                 "a matching ID cannot replace learned Base Magic data");
-            Equal(original, player.ChantlessMagic);
+            Equal(original, player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
         }),
         ("Quarter steps convert and format every allowed multiplier exactly", () =>
         {
@@ -84,15 +86,23 @@ internal static class MagicTests
             Equal(13, ability.ManaCost);
             Equal(DamageKind.Magical, ability.Effects.Single().DamageKind);
         }),
-        ("Active battle locks the authoritative chantless configuration", () =>
+        ("Last-used chantless configuration is spell-specific and accepts resolved battle values only", () =>
         {
             var player = Player();
             var changed = new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 6);
-            Check(player.TryConfigureChantlessMagic(changed), "out-of-battle configuration applies");
-            player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed));
-            Check(!player.TryConfigureChantlessMagic(new(PrototypeMagic.Fireball, 7, 8)),
-                "active battle rejects configuration edits");
-            Equal(changed, player.ChantlessMagic);
+            Check(!player.TryRememberSuccessfulChantlessMagic(changed),
+                "out-of-battle code cannot forge a successful cast");
+            var battle = player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed));
+            Check(battle.TakeTurn(new(0, FireballMagic.CreateAbility(changed), 1)),
+                "test Fireball resolves before its configuration is recorded");
+            Check(player.TryRememberSuccessfulChantlessMagic(changed),
+                "an owned active battle may record its resolved chantless cast");
+            Equal(changed, player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+
+            var unknown = new BaseMagicDefinition("fixture:magic.other", "Other", 3, 4);
+            Check(!player.TryRememberSuccessfulChantlessMagic(new(unknown, 7, 8)),
+                "one spell cannot overwrite another spell's saved values");
+            Equal(changed, player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
         })
     ];
 

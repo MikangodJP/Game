@@ -60,10 +60,9 @@ ITEMS      MAGIC      EQUIP
 STATUS     ACTIONS    SYSTEM
 ```
 
-Magic opens **Spells / Adjustment / Information / Back**. **Adjustment is now
-functional:** it edits Fireball Size and Output in exact 0.25 steps from 0.25
-through 4.00, previews the shared MP cost, and commits only on Apply. Escape
-cancels its draft. Information explains the chantless configuration model.
+Magic opens **Spells / Information / Back**. It has no casting adjustment state;
+Fireball is adjusted only when it is selected during Battle. Information explains
+the chantless configuration model.
 System opens **Settings / For Testing / Back**. Every unfinished leaf opens a
 visible, truthful WIP panel rather than silently returning. Items reports that no
 inventory exists, Actions reports that no contextual actions are available,
@@ -71,20 +70,19 @@ and **Equip is read-only information in this slice**; it does not enter
 Preparation. The existing direct Field equipment binding remains **E / Enter**.
 
 Passive Info and Placeholder panels dismiss with **Enter or Escape**, one layer
-only; Enter retains its explicit behavior inside Adjustment and does not close
-the Field control menu.
+only, without closing the Field control menu.
 
 Status is functional and read-only. It shows the existing `ADVENTURER` prototype
 identity and projects the current persistent player's live HP/MP and effective
 STR/DEF/MAG/RES/AGI values; it does not copy or invent stats. Magic and Resistance
 feed Fireball's implemented damage seam; Agility remains displayed-only.
 
-`CharacterPreparation` owns the one authoritative chantless configuration and
-the learned Base Magic collection, which contains Fireball by default. Size and
+`CharacterPreparation` owns the learned Base Magic collection, which contains
+Fireball by default, and spell-specific last-successful configurations. Size and
 Output are stored as integer quarter steps, never accumulated floating point.
-Battle's existing visible `MAGIC > ELEMENTAL MAGIC > Fire` leaf consumes that
-configuration as the domain spell **Fireball**. `Fire` remains only the current
-taxonomy label; it is not the permanent identity of the spell.
+Battle's visible `MAGIC > CHANTLESS > ELEMENTAL MAGIC > Fire` leaf opens a cast
+draft for the domain spell **Fireball**. `Fire` remains only the current taxonomy
+label; it is not the permanent identity of the spell.
 
 **Escape / Backspace / controller B** dismisses a panel first, then pops one
 child window, then closes from the root. **Tab / controller View-Select** closes
@@ -264,15 +262,20 @@ The four functional commands are:
   Defense mitigation, rounded down with minimum 1, then capped to remaining HP.
   Guard ends at the start of the defender's next **accepted** action; rejected
   commands do not remove it. This is a temporary boolean, not a new status system.
-- **MAGIC > ELEMENTAL MAGIC > Fire:** cast the configured domain spell
-  **Fireball** at one living enemy. Affordability is checked before target
-  selection. A failed check shows `Not enough MP.` without spending a turn;
-  target cancellation is also free. A confirmed cast deducts the centralized
-  cost once, applies magical damage, then uses the normal enemy response loop.
+- **MAGIC:** first choose `CHANTLESS` or `CHANT`. Chant is a passive WIP message.
+  Chantless contains the complete existing Magic taxonomy.
+- **MAGIC > CHANTLESS > ELEMENTAL MAGIC > Fire:** open the Battle cast adjustment
+  for the domain spell **Fireball**, then choose Cast and one living enemy.
+  Affordability is checked on Cast before target selection. A failed check shows
+  `Not enough MP.` and returns to the intact draft without spending a turn;
+  target cancellation is also free and returns to the adjustment. A confirmed
+  cast deducts the centralized cost once, applies magical damage, runs the normal
+  enemy response loop, and records that spell's last-successful configuration.
 - **RUN:** guaranteed escape, with a distinct `Fled` result and no enemy response.
 
 Every other Magic leaf, plus **SUMMONING, SKILLS, SPECIAL, ITEMS and TACTICS,**
-remains UI-only. The complete requested hierarchy contains **148 WIP leaves**.
+remains UI-only. The complete requested hierarchy contains **149 WIP leaves**,
+including the passive Chant entry.
 Every WIP leaf opens a named dialog and returns to the same selection. Submenus
 support a stack of any depth, explicit Back, breadcrumbs and scrolling. WIP
 browsing consumes no turns or random draws. Transformation Magic remains its
@@ -304,14 +307,14 @@ summons, rewards, save flow or production UI infrastructure was added.
 pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
-This runs the **65 core tests in both Debug and Release**, the **37 presentation
-tests** (including traversal of all 148 battle WIP leaves and the Field menu
+This runs the **65 core tests in both Debug and Release**, the presentation
+tests (including traversal of all 149 battle WIP leaves and the Field menu
 tree), then opens Godot briefly
 for automated rendering/input checks. A graphical desktop is required for the
 last step. The QA injects keyboard and controller events through Godot's normal
 input path, captures native-resolution PNGs, checks the limited palette, and
 exercises equipment preview/equip/unequip, resource maxima, the battle snapshot
-and equipment lock, spatial navigation, Attack, Defend, configured Fireball,
+and equipment lock, spatial navigation, Attack, Defend, Battle-adjusted Fireball,
 pre-target MP failure, Run, ordinary battle completion and logging.
 This does not claim a physical controller was tested.
 
@@ -319,15 +322,15 @@ Results, engine logs and screenshots are written under `artifacts/visual/`;
 `qa.txt`, `field-qa.txt`, and `menu-qa.txt` must all end with `PASS ALL`. The
 second Godot run
 starts through the normal Field entry and exercises movement, release/collision,
-equipment, Magic Adjustment, configured Fireball, encounter contact, escape,
-defeat/restart, victory, persisted HP/MP/gear/configuration, defeated encounter
+equipment, Battle Magic Adjustment, configured Fireball, encounter contact,
+escape, defeat/restart, victory, persisted HP/MP/gear/last-used configuration, defeated encounter
 removal and continued movement. The third run exercises the
 Field control menu's real key/controller routing, held-movement clearing,
 nested Back behavior, window bounds and palette, live Status sheet,
 placeholders, Field-under-menu rendering, and Battle input isolation. Existing
 golden comparisons launch separate processes and compare exact bytes. The
 baseline is never regenerated by these commands. The current revision passes
-**239 isolated battle QA checks**, **183 field-loop QA checks**, and **96
+**264 isolated battle QA checks**, **183 field-loop QA checks**, and **87
 Field-menu QA checks** in the real engine.
 See [current RPG loop findings](RPG_LOOP_REPORT.md), the
 [historical equipment findings](EQUIPMENT_REPORT.md), the
@@ -385,7 +388,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Probe/Stats.cs` | Seven-stat value, base-to-effective resolver, centralized physical damage |
 | `Probe/Magic.cs` | Required Base Magic data, exact quarter steps, shared MP cost and Fireball ability factory |
 | `Probe/Equipment.cs` | Four slots, immutable item definitions/loadout, flat bonuses and four literals |
-| `Probe/CharacterPreparation.cs` | Authoritative player equipment/resources, resolved snapshot entry, owned-result application and equipment guard |
+| `Probe/CharacterPreparation.cs` | Authoritative player equipment/resources, per-spell last-used Magic, resolved snapshot entry, owned-result application and equipment guard |
 | `Probe/Field.cs` | Immutable map/collision data and retained field position/encounter state |
 | `Probe/GameState.cs` | Application-owned persistent player, encounter entry and result application |
 | `Probe/BattleState.cs` | Owned mutable battle state, turn progression, event emission, result boundary |
@@ -397,7 +400,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `REPORT.md` | Phase 1B handoff and the three deferred NON-BLOCKER findings |
 | `Visual/Presentation/BattleSession.cs` | Core-owning adapter, immutable views, four command routes, affordability and readable events |
 | `Visual/Presentation/Menu.cs` | Requested UI-only command tree, spatial grid and navigation stack |
-| `Visual/Presentation/HarnessController.cs` | Preparation/equipment flow, menu, target, WIP, text and debug state |
+| `Visual/Presentation/HarnessController.cs` | Preparation/equipment flow, Battle cast draft, menu, target, WIP, text and debug state |
 | `Visual/Presentation/GameController.cs` | Field/preparation/battle/game-over mode transitions and input routing |
 | `Visual/FieldScreen.cs` | Read-only field/player/enemy rendering using the existing pixel presentation |
 | `Visual/BattleScreen.cs`, `Visual/PixelArt.cs` | Input, low-resolution drawing, original bitmap glyphs and sprites |

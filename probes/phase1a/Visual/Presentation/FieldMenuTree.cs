@@ -23,7 +23,7 @@ public static class FieldMenuCatalog
             Branch("magic", "MAGIC",
                 Panel("spells", "SPELLS", FieldMenuPanelKind.Placeholder, "SPELLS ARE NOT IMPLEMENTED YET."),
                 Panel("information", "INFORMATION", FieldMenuPanelKind.Info,
-                    "CHANTLESS MAGIC CAN MODIFY THE SIZE AND OUTPUT OF A LEARNED BASE MAGIC."),
+                    "CHANTLESS MAGIC IS ADJUSTED BEFORE EACH CAST IN BATTLE."),
                 Back),
             Panel("equip", "EQUIP", FieldMenuPanelKind.Info, "EQUIPMENT OPENS FROM THE FIELD WITH E."),
             Panel("status", "STATUS", FieldMenuPanelKind.Status, "MAG/RES/AGI ARE WIP."),

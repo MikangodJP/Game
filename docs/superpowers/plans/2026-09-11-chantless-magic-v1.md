@@ -1,10 +1,15 @@
 # Chantless Magic V1 Implementation Plan
 
+> **Historical record:** This plan describes the original three commits. Its
+> Field Adjustment steps were superseded by the approved correction recorded in
+> `docs/superpowers/specs/2026-09-11-chantless-magic-v1-design.md`. It is not the
+> current implementation guide.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make passive Field panels Enter-dismissible, add a persistent quarter-step Fireball editor, and cast that configured chantless Fireball through the existing player-first Battle flow.
+**Goal:** Historical implementation record for passive Field-panel dismissal and the first chantless Fireball slice.
 
-**Architecture:** `CharacterPreparation` owns learned Base Magic and the committed `ChantlessMagicConfiguration`. Pure domain calculators build cost and damage from integer quarter steps; `FieldMenuController` owns only an editing draft; `BattleSession` reads the same player configuration. Only `MAGIC > ELEMENTAL MAGIC > Fire` becomes functional, while Transformation Magic stays unchanged.
+**Current architecture:** `CharacterPreparation` owns learned Base Magic and per-spell last-successful configurations. `HarnessController` owns the Battle cast draft; `FieldMenuController` owns no adjustment state. `MAGIC > CHANTLESS > ELEMENTAL MAGIC > Fire` opens Fireball adjustment, while Transformation Magic stays unchanged.
 
 **Tech Stack:** C# 12, .NET 8, Godot 4.6.3 Mono, PowerShell 7, console tests, Godot input/render QA.
 
@@ -12,7 +17,7 @@
 
 ## Global Constraints
 
-- Fireball is chantless. Do not add Chant, interruption, enemy-first order, AoE, known-form efficiency, learning, or more spells.
+- Fireball is chantless. `CHANT` is only an honest WIP message; do not add functional chanted casting, interruption, enemy-first order, AoE, known-form efficiency, learning, or more spells.
 - UI leaf may remain `Fire`; all domain identity and stable IDs use Fireball.
 - Size/Output are integer steps `1..16`, display `0.25..4.00`, default `4 = 1.00`.
 - Size affects MP cost only; Output affects cost and single-target damage.
@@ -84,7 +89,7 @@ git commit -m "fix: allow enter to dismiss menu info panels"
 
 ---
 
-### Task 2: Persistent Configuration and Field Adjustment
+### Task 2: Persistent Configuration and Field Adjustment (historical; superseded)
 
 **Files:**
 - Create: `probes/phase1a/Probe/Magic.cs`
@@ -181,7 +186,7 @@ Expected: Task 3 Battle integration and golden files are absent.
 
 ---
 
-### Task 3: Cast Configured Fireball in Battle
+### Task 3: Cast Configured Fireball in Battle (historical; superseded)
 
 **Files:**
 - Modify: `probes/phase1a/Visual/Presentation/Menu.cs`, `BattleSession.cs`, `HarnessController.cs`

@@ -159,11 +159,16 @@ var tests = new (string Name, Action Run)[]
         Equal(before.Hero, session.View.Hero);
         Check(before.Enemies.SequenceEqual(session.View.Enemies), "enemy state is unchanged");
         Equal(before.Finished, session.View.Finished);
+        Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+            player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
         DismissMessages(ui);
         Equal(ScreenMode.MagicAdjustment, ui.Mode);
         Equal(5, ui.MagicAdjustment!.SizeSteps);
         Equal(2, ui.MagicAdjustment.SelectedIndex);
+        Equal(5, ui.MagicAdjustment.MpCost);
         ui.Handle(UiInput.Up); ui.Handle(UiInput.Left);
+        Equal(3, ui.MagicAdjustment.OutputSteps);
+        Equal(4, ui.MagicAdjustment.MpCost);
         ui.Handle(UiInput.Up); ui.Handle(UiInput.Left); ui.Handle(UiInput.Left);
         Equal(3, ui.MagicAdjustment.SizeSteps); Equal(3, ui.MagicAdjustment.OutputSteps);
         Equal(3, ui.MagicAdjustment.MpCost);
@@ -176,6 +181,8 @@ var tests = new (string Name, Action Run)[]
         Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
         Equal(ScreenMode.MagicAdjustment, ui.Mode);
         ui.Handle(UiInput.Right); Equal(5, ui.MagicAdjustment!.SizeSteps); Equal("1.25", ui.MagicAdjustment.SizeMultiplier);
+        ui.Handle(UiInput.Right); Equal(6, ui.MagicAdjustment.SizeSteps); Equal("1.50", ui.MagicAdjustment.SizeMultiplier);
+        ui.Handle(UiInput.Left); Equal(5, ui.MagicAdjustment.SizeSteps); Equal("1.25", ui.MagicAdjustment.SizeMultiplier);
         for (var i = 0; i < 30; i++) ui.Handle(UiInput.Left);
         Equal(1, ui.MagicAdjustment.SizeSteps); Equal("0.25", ui.MagicAdjustment.SizeMultiplier);
         for (var i = 0; i < 30; i++) ui.Handle(UiInput.Right);
@@ -205,6 +212,55 @@ var tests = new (string Name, Action Run)[]
         ui.Handle(UiInput.Back);
         Equal(ScreenMode.Menu, ui.Mode);
         Equal("Fire", ui.Menu.CurrentEntries[ui.Menu.SelectedIndex].Label);
+        Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+            ui.Preparation.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+    }),
+    ("Only a successful Fireball updates same-battle and later-battle adjustment defaults", () =>
+    {
+        var player = new CharacterPreparation(new CharacterStats(80, 24, 12, 8, 6, 6, 10));
+        var ui = new HarnessController(player,
+            new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed))));
+        var changed = new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 7, 10);
+
+        Check(!ui.Session.SubmitFireball(changed, 0), "friendly target rejects the cast");
+        Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+            player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+
+        OpenFireAdjustment(ui);
+        for (var i = 0; i < 3; i++) ui.Handle(UiInput.Right);
+        ui.Handle(UiInput.Down);
+        for (var i = 0; i < 6; i++) ui.Handle(UiInput.Right);
+        ui.Handle(UiInput.Back);
+        Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+            player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+
+        Choose(ui, "Fire");
+        for (var i = 0; i < 3; i++) ui.Handle(UiInput.Right);
+        ui.Handle(UiInput.Down);
+        for (var i = 0; i < 6; i++) ui.Handle(UiInput.Right);
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
+        ui.Handle(UiInput.Back);
+        Equal(new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 4, 4),
+            player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+
+        ui.Handle(UiInput.Down); ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Targets, ui.Mode);
+        ui.Handle(UiInput.Confirm);
+        Equal(changed, player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
+        DismissMessages(ui);
+
+        OpenFireAdjustment(ui);
+        Equal(7, ui.MagicAdjustment!.SizeSteps); Equal(10, ui.MagicAdjustment.OutputSteps);
+        ui.Handle(UiInput.Back);
+        ui.Handle(UiInput.Back); ui.Handle(UiInput.Back); ui.Handle(UiInput.Back);
+        Choose(ui, "RUN"); DismissMessages(ui);
+        Equal(ScreenMode.Ended, ui.Mode);
+        player.CompleteBattle();
+
+        var later = new HarnessController(player,
+            new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed))));
+        OpenFireAdjustment(later);
+        Equal(7, later.MagicAdjustment!.SizeSteps); Equal(10, later.MagicAdjustment.OutputSteps);
     }),
     ("Battle adapter uses Output for Fireball damage and Size only for cost", () =>
     {
@@ -462,9 +518,12 @@ static HarnessController Started()
 }
 static BattleSession MagicSession(ChantlessMagicConfiguration configuration)
 {
-    var player = new CharacterPreparation(Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats);
-    Check(player.TryConfigureChantlessMagic(configuration), "test configuration accepted");
-    return new BattleSession(player.BeginBattle(Scenario.Setup(Scenario.GoldenSeed)));
+    return new BattleSession();
+}
+static void OpenFireAdjustment(HarnessController ui)
+{
+    Choose(ui, "MAGIC"); Choose(ui, "CHANTLESS"); Choose(ui, "ELEMENTAL MAGIC"); Choose(ui, "Fire");
+    Equal(ScreenMode.MagicAdjustment, ui.Mode);
 }
 static void StartBattle(HarnessController ui)
 {

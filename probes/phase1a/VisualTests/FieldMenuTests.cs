@@ -88,7 +88,7 @@ internal static class FieldMenuTests
                 (["ITEMS"], FieldMenuPanelKind.Placeholder, "NO INVENTORY AVAILABLE."),
                 (["MAGIC", "SPELLS"], FieldMenuPanelKind.Placeholder, "SPELLS ARE NOT IMPLEMENTED YET."),
                 (["MAGIC", "INFORMATION"], FieldMenuPanelKind.Info,
-                    "CHANTLESS MAGIC CAN MODIFY THE SIZE AND OUTPUT OF A LEARNED BASE MAGIC."),
+                    "CHANTLESS MAGIC IS ADJUSTED BEFORE EACH CAST IN BATTLE."),
                 (["EQUIP"], FieldMenuPanelKind.Info, "EQUIPMENT OPENS FROM THE FIELD WITH E."),
                 (["STATUS"], FieldMenuPanelKind.Status, "MAG/RES/AGI ARE WIP."),
                 (["ACTIONS"], FieldMenuPanelKind.Info, "NO CONTEXTUAL ACTIONS AVAILABLE."),

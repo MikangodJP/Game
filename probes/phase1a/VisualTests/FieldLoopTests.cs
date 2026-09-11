@@ -63,7 +63,6 @@ internal static class FieldLoopTests
             Check(player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "sword equipped before field encounter");
             Check(player.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "armor equipped before field encounter");
             var magic = new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 5, 5);
-            Check(player.TryConfigureChantlessMagic(magic), "non-default Fireball configured before field encounter");
             var game = new GameController(player: player);
             var field = game.State.Field;
             var map = field.Map;
@@ -74,7 +73,8 @@ internal static class FieldLoopTests
             Equal(12, game.Harness.Session.View.Hero.EffectiveStats.Defense);
             Choose(game, "MAGIC"); Choose(game, "CHANTLESS"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
             Equal(ScreenMode.MagicAdjustment, game.Harness.Mode);
-            game.Handle(UiInput.Down); game.Handle(UiInput.Down); game.Handle(UiInput.Confirm);
+            game.Handle(UiInput.Right); game.Handle(UiInput.Down); game.Handle(UiInput.Right);
+            game.Handle(UiInput.Down); game.Handle(UiInput.Confirm);
             Equal(ScreenMode.Targets, game.Harness.Mode);
             game.Handle(UiInput.Confirm); FinishMessages(game);
             Equal(1, game.Harness.Session.View.Hero.Mp);
@@ -95,7 +95,7 @@ internal static class FieldLoopTests
             Check(ReferenceEquals(field, game.State.Field) && ReferenceEquals(map, field.Map), "field and map survive encounter");
             Equal(contactPosition, field.PlayerPosition);
             Equal(remainingHp, player.Hp); Equal(1, player.Mp);
-            Equal(magic, player.ChantlessMagic);
+            Equal(magic, player.LastUsedChantlessMagic(PrototypeMagic.Fireball));
             Equal(PrototypeEquipment.WoodenSword, player.Loadout.Get(EquipmentSlot.Weapon));
             Check(field.Encounters.Single().Defeated, "victory recorded in field state");
             Check(!game.State.InEncounter && !player.InBattle, "completed encounter released");
