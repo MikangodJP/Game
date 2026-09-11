@@ -49,8 +49,11 @@ public partial class FieldScreen : Node2D
         foreach (var encounter in field.Encounters.Where(e => !e.Defeated))
             DrawToken(encounter.Position, enemy: true);
         DrawToken(field.PlayerPosition, enemy: false);
-        Text("WASD/ARROWS MOVE   E/ENTER EQUIPMENT", 8, 215, Paper);
-        Text("TOUCH ENEMY TO BATTLE", 8, 228, RockLight);
+        if (Game.Mode != GameMode.Menu)
+        {
+            Text("WASD/ARROWS MOVE   E/ENTER EQUIPMENT", 8, 215, Paper);
+            Text("TOUCH ENEMY TO BATTLE", 8, 228, RockLight);
+        }
 
         if (Game.Mode == GameMode.GameOver)
         {

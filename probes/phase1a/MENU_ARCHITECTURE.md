@@ -1,7 +1,7 @@
 # Field Control Menu Architecture — retro command windows, hierarchical navigation, TAB entry
 
-**Status:** **APPROVED IN PRINCIPLE 2026-09-11.** Owner decisions recorded in §19.
-Implementation blocked on the macOS preflight in §20.
+**Status:** **FIRST VISUAL SLICE IMPLEMENTED 2026-09-11.** Owner decisions are
+recorded in §19; the macOS preflight in §20 completed before implementation.
 **Date:** 2026-09-11
 **Scope:** a keyboard-driven Field command menu that becomes the game's main control
 centre · two-row root grid · contextual pop-out windows · hierarchical back stack ·
@@ -324,15 +324,15 @@ Visual/Presentation/           (no Godot — testable headless)
   GameController.cs  (edit)    GameMode.Menu + routing; owns one FieldMenuController
 
 Visual/                        (Godot — drawing only)
-  RetroUi.cs         (new)     shared palette + WindowStyle + Window/Cursor primitives
-  MenuScreen.cs      (new)     Node2D; draws the read-model; zero game logic
-  BattleScreen.cs    (edit)    Tab binding, Menu draw/visibility gating, Window delegation
+  MenuScreen.cs      (new)     Node2D; draws the read-model with local window/layout helpers
+  BattleScreen.cs    (edit)    Tab binding and Menu draw/visibility gating
   FieldScreen.cs     (edit)    suppress the movement hint line while the menu is open
 ```
 
-Dependency direction: `MenuScreen → FieldMenuController → FieldMenuTree`, and
-`MenuScreen → RetroUi`. Nothing in `Presentation/` references Godot; nothing in
-`Probe/` learns the menu exists.
+Dependency direction: `MenuScreen → FieldMenuController → FieldMenuTree`.
+Nothing in `Presentation/` references Godot; nothing in `Probe/` learns the menu
+exists. The optional shared-primitive extraction was deliberately skipped in
+this slice to leave Battle rendering untouched.
 
 ---
 
@@ -684,11 +684,11 @@ Font metrics are fixed: glyph 5×7, advance 6 px, so an *n*-character label is
 | Column origins | x = 14, 62, 110 (48 px pitch) |
 | Row baselines | y = 32 (row 0), y = 44 (row 1) |
 | Cursor `>` | at the column origin |
-| Label | column origin + 8 |
+| Label | column origin + 6 (root); +8 in vertical child windows |
 
-Widest label (`STATUS`, 6 chars = 35 px) ends at x = 153, inside the 168 px right
-edge. A 4-column root uses a 38 px pitch in a 168 px window and still fits 6-char
-labels.
+The widest label, `ACTIONS` (7 chars = 41 px), ends at x = 108 in column 1,
+leaving a black pixel at x = 109 before column 2's cursor at x = 110. `SYSTEM`
+ends at x = 150, inside the 168 px right edge.
 
 **Child windows** are content-sized:
 `width = max(96, 16 + 8 + longestLabel)`, `height = 15 + 12 × entries + 6`,
@@ -718,8 +718,7 @@ both rounded up to even numbers so the 1-px border stays symmetric.
 The renderer is a switch over `MenuPanelKind`:
 
 - **CommandList** — cursor + labels, dim when `Enabled == false`.
-- **Info** — title + wrapped lines (`BattleScreen.Wrap` already does the wrapping
-  maths and moves into `RetroUi`).
+- **Info** — title + wrapped lines using `MenuScreen`'s renderer-local helper.
 - **StatusSheet** — two columns: label left-aligned, value right-aligned at a fixed
   inset. Fed from `CharacterPreparation.EffectiveStats`, `Hp`, `Mp`.
 - **Placeholder** — a centred `<NAME>` + `IS NOT IMPLEMENTED YET.` + `[ BACK ]`,
@@ -804,24 +803,19 @@ unused until a command genuinely becomes conditionally unavailable.
 
 ### 12.1 The line
 
-> **Share stateless pixel primitives. Do not share layout, selection rendering, or
-> navigation state.**
+> **Do not share layout, selection rendering, or navigation state. Share
+> stateless pixel primitives only in a later independently gated refactor.**
 
-### 12.2 Shared — `Visual/RetroUi.cs` *(new)*
+### 12.2 Implemented choice — renderer-local helpers
 
-| Moves in | From | Change |
-|---|---|---|
-| The colour constants | duplicated in `BattleScreen` **and** `FieldScreen` | consolidated; values unchanged |
-| `Window(x, y, w, h)` | `BattleScreen`, private | gains a `WindowStyle` parameter *(fill, border, accent)*; `BattleScreen` passes its existing style |
-| `Wrap(text, columns)` | `BattleScreen`, private | moved verbatim |
-| `Center(text, cx, y, ...)` | `BattleScreen`, private | moved verbatim |
+The first slice took the zero-regression branch: `MenuScreen` owns its small
+window, wrapping, sizing and anchoring helpers. `BattleScreen.Window`,
+`BattleScreen.Wrap`, its palette, and `FieldScreen`'s palette remain unchanged.
+Both renderers call the already-public `PixelArt.Text` directly.
 
-`PixelArt.Text` is **already** public and static and needs no change at all.
-
-This is a pure refactor with a hard gate: **the 213 battle QA checks, the captured
-PNGs and the limited-palette check must pass byte-identically.** If the extraction
-cannot be done without a visual diff, it is abandoned and `MenuScreen` gets its
-own ~10-line window function instead.
+No `RetroUi` class was added. A later extraction may share stateless primitives
+only if it has its own battle-image regression gate; it must not be a prerequisite
+for extending the Field menu.
 
 ### 12.3 Not shared — `DrawCommandGrid`
 
@@ -849,7 +843,8 @@ coupling the two.
 > and re-instantiating `BattleMenu`. **That recommendation is superseded for this
 > feature by this document.** `BattleMenu` and `FieldMenuController` /
 > `FieldMenuTree` remain separate logical systems. Only low-level visual
-> primitives are shared, and only where doing so is genuinely low-risk (§12.2).
+> primitives may be shared later, and only where doing so is genuinely low-risk
+> (§12.2).
 >
 > Owner's stated rationale, recorded verbatim in effect: the ~40 lines of
 > duplicated menu-navigation logic are preferable to coupling the already-working
@@ -933,15 +928,15 @@ Each stage ends green before the next begins. Stages 1–3 are the approved slic
 
 | Stage | Work | Gate |
 |---|---|---|
-| **0** | **macOS verification preflight (§20) — BLOCKING.** No menu work begins until this is green | All six owner-stated conditions in §20.1 satisfied, committed separately |
-| **1** | `FieldMenuTree.cs` + `FieldMenuController.cs` — pure presentation logic, no rendering, no `GameController` change | New headless tests: grid navigation, clamping, stack push/pop, cursor restore, panel activation. Existing 20 presentation tests untouched |
-| **2** | `RetroUi.cs` extraction; `BattleScreen` delegates its `Window`/`Wrap`/`Center` | **Battle QA 213 checks + PNGs + palette check byte-identical.** Standalone commit |
-| **3** | `GameMode.Menu`, `UiInput.Menu`, Tab binding, `MenuScreen.cs`, visibility gating | New field-menu tests; all 163 field-loop QA checks still green; new in-engine menu QA |
-| **4** | `README.md` + `WORLD_ARCHITECTURE.md` cross-reference update | Docs match behaviour |
+| **0** | **COMPLETE:** macOS verification preflight (§20) | All six owner-stated conditions satisfied in commit `0af1ac6` |
+| **1** | **COMPLETE:** `FieldMenuTree.cs` + `FieldMenuController.cs` — pure presentation logic | Headless grid, stack, panel, live Status and mode tests green |
+| **2** | **SKIPPED BY DESIGN:** optional `RetroUi.cs` extraction | Renderer-local helpers leave Battle visuals untouched (§12.2) |
+| **3** | **COMPLETE:** `GameMode.Menu`, `UiInput.Menu`, Tab/pad binding, `MenuScreen.cs`, visibility gating | 29/29 presentation; battle 213; field 163; menu QA 85 |
+| **4** | **COMPLETE:** `README.md` + architecture cross-reference update | Docs match behaviour |
 | **5** *(separate approval)* | `returnMode` on `GameController`; `EQUIP` opens Preparation and returns to the menu | Equipment tests + field-loop QA green |
 
-Stage 2 is the highest-risk step and must be committed alone so it can be reverted
-without losing the menu work.
+The optional Stage 2 extraction was not needed. Avoiding it kept the existing
+Battle drawing helpers and palette out of the feature diff.
 
 ---
 
@@ -969,11 +964,12 @@ Headless tests go in `VisualTests/FieldMenuTests.cs`, registered from
 | T14 | Menu windows render inside 320×240, borders exactly 1 px, colours within the limited palette | in-engine |
 | T15 | Field remains visible behind the menu; closing restores the field HUD exactly | in-engine |
 
-**Preserved without modification:** all 58 core tests (Debug *and* Release), all
-20 existing presentation tests, all 213 battle QA checks, all 163 field-loop QA
-checks, and `golden/battle-20260909.log` byte-for-byte. The menu touches no rule,
-no RNG stream and no event — **a golden diff means something is wrong with the
-change, not with the baseline.**
+**Verified after implementation:** all 58 core tests (Debug *and* Release), all
+20 pre-existing presentation tests plus 9 Field-menu tests (29 total), all 213
+battle QA checks, all 163 field-loop QA checks, all 85 menu QA checks, and
+`golden/battle-20260909.log` byte-for-byte. The menu touches no rule, no RNG
+stream and no event — **a golden diff means something is wrong with the change,
+not with the baseline.**
 
 ---
 
@@ -985,8 +981,7 @@ change, not with the baseline.**
 |---|---|
 | `Visual/Presentation/FieldMenuTree.cs` | `FieldMenuNode`, `MenuPanelKind`, `FieldMenuCatalog.Root` (the 6 root commands + MAGIC/SYSTEM children) |
 | `Visual/Presentation/FieldMenuController.cs` | frame stack, `Open`/`Move`/`Confirm`/`Back`/`Close`, `Columns`, `Breadcrumb`, `ActivePanel`, read-model projection |
-| `Visual/RetroUi.cs` | `Palette` constants, `WindowStyle` record, `Window`, `Wrap`, `Center`, `MenuLayout.Root` / `MenuLayout.Child` |
-| `Visual/MenuScreen.cs` | `Node2D`; draws root grid + child windows + panels from the read-model; no logic |
+| `Visual/MenuScreen.cs` | `Node2D`; draws root grid + child windows + panels from the read-model with renderer-local helpers; no navigation or game logic |
 | `VisualTests/FieldMenuTests.cs` | T1–T12 as a `static (string, Action)[] All` |
 | `Visual/MenuQa.cs` | `partial class BattleScreen`, `--menu-qa` entry, T13–T15 |
 
@@ -996,8 +991,8 @@ change, not with the baseline.**
 |---|---|---|
 | `Visual/Presentation/GameController.cs` | `GameMode.Menu`; own a `FieldMenuController`; `Field` case handles `UiInput.Menu`; new `Menu` case delegating and closing | **Medium** — the transition hub |
 | `Visual/Presentation/HarnessController.cs` | add `Menu` to the `UiInput` enum. **Nothing else in this file changes** | Low |
-| `Visual/BattleScreen.cs` | `Key.Tab` / `JoyButton.Back` → `UiInput.Menu`; `_Draw` early-return includes `Menu`; `RefreshScreens` keeps `fieldScreen` visible in `Menu` and adds `menuScreen`; `AddChild(menuScreen)` **after** `fieldScreen`; `Window`/`Wrap`/`Center` delegate to `RetroUi` | **High** — see §18 |
-| `Visual/FieldScreen.cs` | suppress the `WASD/ARROWS MOVE…` hint lines when `Game.Mode == GameMode.Menu`; use `RetroUi.Palette` | Low |
+| `Visual/BattleScreen.cs` | `Key.Tab` / `JoyButton.Back` → `UiInput.Menu`; `_Draw` early-return includes `Menu`; `RefreshScreens` keeps `fieldScreen` visible in `Menu` and adds `menuScreen`; `AddChild(menuScreen)` **after** `fieldScreen`; battle drawing helpers remain unchanged | **High** — see §18 |
+| `Visual/FieldScreen.cs` | suppress only the `WASD/ARROWS MOVE…` hint lines when `Game.Mode == GameMode.Menu` | Low |
 | `VisualTests/Program.cs` | register `FieldMenuTests.All` | Low |
 | `launch-visual.ps1` | add the `--menu-qa` run to `-Verify`; require `menu-qa.txt` to end `PASS ALL` | Low |
 | `README.md` | document Tab, the root grid, the menu input table, and the new test counts | Low |
@@ -1005,8 +1000,8 @@ change, not with the baseline.**
 
 **No `.csproj` edits are required.** `VisualTests` globs
 `../Visual/Presentation/*.cs` (§1.1), so the two new presentation files compile
-into the headless suite automatically. `MenuScreen.cs` and `RetroUi.cs` sit under
-`Visual/` and are picked up by the Godot SDK's default glob.
+into the headless suite automatically. `MenuScreen.cs` sits under `Visual/` and
+is picked up by the Godot SDK's default glob.
 
 ### Files that must NOT be touched
 
@@ -1037,15 +1032,15 @@ one file changes.
 
 ## 18. Known risks and regression points
 
-**18.1 — Deviation from an approved document.** §12.4 declines
-`WORLD_ARCHITECTURE.md` §17 Stage 7. Both documents would then disagree. If
-approved, Stage 4 must amend `WORLD_ARCHITECTURE.md` §17 so one plan governs.
+**18.1 — Resolved document deviation.** §12.4 declines the former
+`WORLD_ARCHITECTURE.md` §17 Stage 7. That document now preserves the separate
+`BattleMenu` / `FieldMenuController` decision, so the plans agree.
 
-**18.2 — `BattleScreen.cs` is the highest-risk file, and all three changes land in
-it.** It is 402 lines, holds the only input entry point, draws both battle and
-preparation, and is covered by screenshot and palette QA. Mitigation: Stage 2
-(extraction) commits separately from Stage 3 (menu wiring), and each has its own
-byte-identical gate.
+**18.2 — `BattleScreen.cs` is the highest-risk file.** It holds the only input
+entry point and draws both battle and preparation. The implementation therefore
+limited its changes to physical menu mapping, child creation and mode visibility;
+all existing battle drawing helpers and palettes stayed unchanged. The 213-check
+battle QA gate remains the regression proof.
 
 **18.3 — Draw order.** `MenuScreen` must be added as a child **after**
 `fieldScreen`, and `BattleScreen._Draw` must early-return for `Menu`; otherwise the
@@ -1060,10 +1055,10 @@ depends on it. T13 exists specifically to fail if it does.
 is a game-design substitution, not a technical one, and it is reversible at zero
 cost before Stage 1.
 
-**18.6 — This machine cannot currently run the verification harness.** Every gate
-above is expressed in `launch-visual.ps1` / `verify.ps1` (PowerShell) against a
-`.tools/` directory that is gitignored and absent on this MacBook. Fully addressed
-by §20, which is now a blocking Stage 0.
+**18.6 — Resolved macOS harness risk.** The cross-platform preflight commit
+`0af1ac6` made the PowerShell workflow discover .NET 8 and Godot 4.6.3 Mono on
+macOS while retaining the Windows/Linux paths and every existing verification
+gate. §20 is retained as the historical preflight record.
 
 **18.7 — Correction to an earlier claim about `project.godot`.** I previously
 stated that the uncommitted editor rewrite "likely breaks letterboxing" by
@@ -1094,6 +1089,7 @@ question definitively on the owner's own engine build.
 | **Q2** | Menu palette | **Literal black `#000000` / white `#FFFFFF`.** Existing palette still governs everything outside menu windows. One documented grey for disabled text (§11.1a) |
 | **Q3** | Accept the §12.4 deviation from `WORLD_ARCHITECTURE.md` Stage 7? | **ACCEPTED.** `BattleMenu` is not refactored and is not to be touched. This document supersedes Stage 7 for this feature |
 | **Q4** | Stage 5 (`EQUIP` → Preparation → back to menu): approve now or after the slice? | **After.** `EQUIP` stays an informational panel in slice 1. Stage 5 is documented but **not approved** and needs its own approval later |
+| **Q5** | Gamepad binding for opening/closing the menu | **`JoyButton.Back` (Select / View) → `UiInput.Menu`.** `JoyButton.Start` remains the verified Game Over restart binding |
 | — | `GameMode.Menu` | **APPROVED** |
 | — | 3×2 root grid | **APPROVED** |
 | — | Clamp rather than wrap | **APPROVED** |
@@ -1110,18 +1106,18 @@ question definitively on the owner's own engine build.
 
 | # | Question | My recommendation |
 |---|---|---|
-| **Q5** | **Gamepad binding for opening/closing the menu.** The keyboard binding is Tab (decided). The gamepad has no equivalent yet. `JoyButton.Start` is already taken by `UiInput.Restart` at Game Over, so it is not available | **`JoyButton.Back` (the Select / View button) → `UiInput.Menu`.** It is unbound today, it is the conventional "menu" button on every modern pad, and it leaves `Start` = `Restart` untouched. Alternative if you prefer Start to mean "menu" in the long run: remap `Restart` to `JoyButton.Y` first — but that changes verified Game Over behaviour and I would not do it inside this feature |
 | **Q6** | **Disabled-entry rendering.** §11.1a permits one grey (`#7F7F7F`) as the only non-black/white value inside a menu window, rather than true 50% dithering | Grey. No disabled entries exist in slice 1, so this can be revisited at zero cost when the first conditional command appears |
 
-Q5 needs an answer before Stage 3. Q6 needs an answer before the first
-conditionally-unavailable command, which is not in this slice.
+Q6 needs an answer before the first conditionally-unavailable command, which is
+not in this slice.
 
 ---
 
-## 20. macOS verification preflight (Stage 0 — BLOCKING)
+## 20. macOS verification preflight (Stage 0 — COMPLETE)
 
-No menu implementation begins until this section is green. The owner's stated
-requirement is a *known-good Mac development state*, and explicitly:
+This section records the gate completed in commit `0af1ac6` before menu
+implementation began. The owner's stated requirement was a *known-good Mac
+development state*, and explicitly:
 **do not weaken or delete QA because the platform changed, and prefer making the
 existing workflow cross-platform over maintaining two divergent test systems.**
 This section is written to that instruction.
@@ -1205,11 +1201,9 @@ Stop at the first failure; each step's output is the evidence for §20.1.
 | **P7** | `pwsh ./probes/phase1a/launch-visual.ps1` and actually play it | Walk, equip, fight, win, return to field |
 | **P8** | Commit as **one toolchain commit**, separate from all menu work | Clean tree |
 
-P3 and P4 depend on nothing but P1 and P2. If P6 proves difficult, **conditions 1,
-2, 4, 5 and 6 can still be satisfied and recorded**, and only condition 3 stays
-open — which would block Stage 2 (the `RetroUi` extraction, whose gate *is* the
-battle QA) but not Stage 1, which is pure headless logic. That is the natural
-fallback ordering and it does not require weakening anything.
+P3 and P4 depended on nothing but P1 and P2. The documented fallback was not
+needed: P6 passed with the full 213-check battle and 163-check Field suites, and
+the optional shared-renderer extraction was later skipped by design.
 
 #### Most likely macOS-specific failures, ranked
 
@@ -1302,5 +1296,5 @@ committed.
 
 ---
 
-**Status: approved in principle. Implementation blocked on §20 (Stage 0).
-Q5 must be answered before Stage 3.**
+**Status: first visual slice implemented. Stage 0 is complete, Q5 is resolved,
+and the unified gate covers core, presentation, battle, field, and menu QA.**

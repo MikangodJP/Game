@@ -552,21 +552,22 @@ One entry point remains (`BattleScreen._UnhandledInput`), routing by mode:
 TAB is consumed only in Field and Menu. It is explicitly ignored in Battle, which
 is the preventative for "menu opening during battle".
 
-### Menu structure — reuse the existing navigation engine
+### Menu structure — keep Field and Battle navigation separate
 
-`Menu.cs` already implements a nested frame stack with cursor, columns, Back, and
-breadcrumbs, and it is presentation-only with no battle dependency beyond two
-enums. Extract that machinery as `MenuTree` and instantiate it twice rather than
-writing a second menu engine:
+The approved and implemented Field-menu slice deliberately does not extract the
+existing `BattleMenu`. Battle navigation is heavily regression-tested and owns
+combat-specific actions and layout conventions. `FieldMenuTree` declaratively
+defines the control-centre hierarchy, while `FieldMenuController` owns its own
+frame stack, clamped cursor and immutable read model:
 
 ```
-COMMAND (field, 1 column, DQ-style vertical)
-├── Items        inventory list, use/inspect
-├── Equipment    -> existing preparation/equipment screen, integrated not rewritten
-├── Status       existing stat display
-└── System
-    └── For Testing        [developer builds only]
-        └── Give Test Item -> [TEST] God Sword / God Armor / Full Restore / Absurd Charm
+COMMAND (field, 3×2 root; vertical children)
+├── Items        current placeholder; future inventory list/use/inspect
+├── Magic        Spells / Adjustment / Information placeholders
+├── Equip        current information panel; future menu-integrated equipment
+├── Status       live persistent-player stats
+├── Actions      current contextual-action information panel
+└── System       Settings / For Testing placeholders
 ```
 
 **Search / Interact is omitted (D3).** There is no field interactable in the
@@ -577,10 +578,10 @@ is worse than its absence. It returns when there is something to search: chests,
 NPCs, or examinable terrain. The menu shape is not frozen, so adding a fourth
 root entry later costs nothing.
 
-`BattleMenu` keeps its 3×3 root grid unchanged — `Columns` becomes a per-frame
-property rather than a hardcoded `IsRoot ? 3 : 2`, so battle stays 3×3 and the
-field menu is 1-column. **The battle command grid and the removed battle status
-panel are not touched by any of this.**
+`BattleMenu` keeps its existing 3×3 root and two-column child conventions
+unchanged. Future inventory/test-item work extends only the Field tree and
+controller. A later independently gated refactor may share low-level stateless
+pixel primitives, but it must not couple navigation state or layouts.
 
 Visual language: black panels, 1 px white borders, white pixel text, nested
 windows, `>` cursor on the selected row, information window along the bottom.
@@ -712,12 +713,12 @@ how much the player has **changed**, not how far they have **walked**.
 | `Probe/Items.cs` | **NEW** | `ItemDefinition`, `ItemRegistry`, `Inventory`, developer flag. Fixes P8 |
 | `Probe/CharacterPreparation.cs` | **MODIFY** | Add `Inventory` property. No change to HP/MP/equip/battle-lock semantics |
 | `Probe/GameState.cs` | **MODIFY** | Own `WorldState`; encounter id becomes a coordinate; grant starting items on new game |
-| `Visual/Presentation/Menu.cs` | **SPLIT** | Extract `MenuTree` (frame stack, cursor, per-frame `Columns`); `BattleMenu` becomes an instance. Battle 3×3 grid preserved exactly |
-| `Visual/Presentation/FieldMenuController.cs` | **NEW** | Root/Items/Equipment/Status/System/Testing state; no drawing. No Search entry (D3) |
+| `Visual/Presentation/Menu.cs` | **KEEP** | `BattleMenu` remains unchanged; do not extract or re-instantiate it for Field work |
+| `Visual/Presentation/FieldMenuTree.cs`, `FieldMenuController.cs` | **EXTEND** | Keep the implemented separate Field hierarchy/read model; future inventory and developer commands enter here. No Search entry (D3) |
 | `Visual/Presentation/GameController.cs` | **MODIFY** | Add `GameMode.Menu`; add `Advance(elapsedMs)`; TAB open/close; Equipment now entered from the menu |
 | `Visual/Presentation/HarnessController.cs` | **MODIFY** | Equipment options sourced from inventory; battle sub-modes unchanged |
 | `Visual/FieldScreen.cs` | **MODIFY** | Camera, windowed chunk rendering, terrain table lookup, interpolated player position |
-| `Visual/MenuScreen.cs` | **NEW** | DQ-style panels using existing `Window()`/`Text()` primitives |
+| `Visual/MenuScreen.cs` | **EXTEND** | Keep the implemented drawing-only panels and renderer-local window/layout helpers; add future item panels without changing Battle rendering |
 | `Visual/BattleScreen.cs` | **MODIFY** | Route Menu mode; `_Process` drives `Advance(delta)` instead of stepping tiles directly. All battle drawing unchanged |
 | `Tests/FieldTests.cs` | **MODIFY** | Finite-map assertions retarget to `FiniteMap`; encounter-index assertions retarget to coordinate identity |
 | `Tests/WorldTests.cs` | **NEW** | Determinism, seams, negative coords, navigability audit, encounter identity |
@@ -795,12 +796,13 @@ Each stage ends green before the next begins.
 | **4** | `FieldPlayer` + `Advance`; `GameController.Advance`; `BattleScreen._Process` drives time | Movement/interpolation tests; existing loop tests green |
 | **5** | `FieldScreen` camera + windowed rendering + terrain table | Visual QA: walk in all four directions across chunk borders and across zero |
 | **6** | `Items.cs`; inventory on `CharacterPreparation`; equipment sourced from inventory | Equipment tests updated; battle equipment lock unchanged |
-| **7** | `MenuTree` extraction; `BattleMenu` re-instantiated | **Battle 3×3 grid and absent status panel verified unchanged** |
-| **8** | `GameMode.Menu`, `FieldMenuController`, `MenuScreen`, TAB routing | Menu tests; movement blocked while open; TAB ignored in battle |
+| **7** | Extend the separate `FieldMenuTree` / `FieldMenuController` for inventory-backed commands; keep `BattleMenu` unchanged | **Battle 3×3 grid and absent status panel verified unchanged** |
+| **8** | Integrate the existing `GameMode.Menu`, `MenuScreen`, and TAB routing with the procedural Field | Menu tests; movement blocked while open; TAB ignored in battle |
 | **9** | `System → For Testing → Give Test Item`; developer gating | Test item enters inventory, equips, affects battle; hidden in non-dev build |
 
 Stages 1–4 are pure domain and independently testable without the engine.
-Stage 7 is the highest-regression-risk step and should be a standalone commit.
+Any future extraction of low-level drawing primitives is a separate regression-gated
+refactor; it is not part of Stage 7 and never requires shared navigation state.
 
 ---
 

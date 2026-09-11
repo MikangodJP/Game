@@ -75,6 +75,13 @@ if ($Verify) {
     if ($LASTEXITCODE -ne 0) { throw 'Godot visual/input QA failed.' }
     & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'field-engine-qa.log') -- --field-qa $artifacts
     if ($LASTEXITCODE -ne 0) { throw 'Godot field/battle loop QA failed.' }
+    & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'menu-engine-qa.log') -- --menu-qa $artifacts
+    if ($LASTEXITCODE -ne 0) { throw 'Godot field menu QA failed.' }
+    foreach ($report in @('qa.txt', 'field-qa.txt', 'menu-qa.txt')) {
+        if ((Get-Content (Join-Path $artifacts $report) -Tail 1) -ne 'PASS ALL') {
+            throw "$report did not finish with PASS ALL."
+        }
+    }
 } else {
     & $Godot --path $visualRoot --log-file (Join-Path $artifacts 'engine.log')
     if ($LASTEXITCODE -ne 0) { throw 'Godot visual harness failed.' }

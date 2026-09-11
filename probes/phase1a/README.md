@@ -44,6 +44,39 @@ save/load, map transitions, rewards, inventory or progression additions. After
 victory you can continue exploring this map. See [loop implementation and
 verification](RPG_LOOP_REPORT.md).
 
+## Field control menu
+
+Press **Tab** on the Field to open the retro control menu. On a controller,
+Godot's **Back / View / Select** button is the equivalent menu toggle; controller
+Start remains reserved for restarting at Game Over. The Field remains live and
+visible behind opaque black windows, but `GameMode.Menu` owns input: movement,
+encounters and equipment entry cannot run behind it. Opening or closing clears
+held movement so a released key cannot produce a delayed step.
+
+The root is a clamped 3×2 logical grid with cursor-only selection:
+
+```text
+ITEMS      MAGIC      EQUIP
+STATUS     ACTIONS    SYSTEM
+```
+
+Magic opens **Spells / Adjustment / Information / Back**. System opens
+**Settings / For Testing / Back**. Every unfinished leaf opens a visible,
+truthful WIP panel rather than silently returning. Items reports that no
+inventory exists, Actions reports that no contextual actions are available,
+and **Equip is read-only information in this slice**; it does not enter
+Preparation. The existing direct Field equipment binding remains **E / Enter**.
+
+Status is functional and read-only. It shows the existing `ADVENTURER` prototype
+identity and projects the current persistent player's live HP/MP and effective
+STR/DEF/MAG/RES/AGI values; it does not copy or invent stats. Magic, Resistance
+and Agility remain displayed WIP stats.
+
+**Escape / Backspace / controller B** dismisses a panel first, then pops one
+child window, then closes from the root. **Tab / controller View-Select** closes
+immediately from any menu depth. Menu windows use literal black, white one-pixel
+borders/text, and the existing bitmap font at native 320×240 resolution.
+
 ## Minimal character stats — temporary prototype
 
 The seven integer stats are **MaxHP, MaxMP, Strength, Defense, Magic,
@@ -179,18 +212,21 @@ keeps its separate no-feed configuration because it has no external packages.
 |---|---|
 | WASD / arrows / D-pad in Field | Move one tile immediately; repeat while held; obey map collision |
 | E / Enter / Space / A in Field | Open equipment preparation |
+| Tab in Field or Field menu | Open from Field; close immediately from any menu depth |
+| Controller Back / View / Select | Same conceptual Field-menu toggle as Tab |
 | Arrow keys / WASD in battle menus | Move spatially through rows and columns; stop at edges |
+| Arrow keys / WASD / D-pad in Field menu | Move through the clamped 3×2 root or vertical child commands |
 | Up / Down or W / S in preparation | Choose preparation action, equipment slot or item |
 | Left / Right or A / D while targeting | Choose living enemy; stop at the ends |
 | Enter / Space | Confirm; advance battle text; close WIP message |
-| Escape / Backspace | Back; cancel targeting; close WIP or remaining battle text |
+| Escape / Backspace | Back one Field-menu level; cancel targeting; close WIP or remaining battle text |
 | D-pad, A / B equivalents | Move, confirm / back |
 | F2 during battle | Open or close original event inspector; arrows scroll |
 | F3 inside the inspector | Save canonical events to `artifacts/visual/machine-events.log` |
 | Enter / A / Back at the battle result | Apply result and return to Field, or Game Over on defeat |
 | R / controller Start at Game Over | Explicitly start a fresh game |
 
-The root command menu is a real **3×3 grid**:
+The battle root command menu remains a real **3×3 grid**:
 
 ```text
 ATTACK      DEFEND      MAGIC
@@ -244,8 +280,9 @@ save flow or production UI infrastructure was added.
 pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
-This runs the **58 core tests in both Debug and Release**, the **20 presentation
-tests** (including traversal of all 149 WIP leaves), then opens Godot briefly
+This runs the **58 core tests in both Debug and Release**, the **29 presentation
+tests** (including traversal of all 149 battle WIP leaves and the Field menu
+tree), then opens Godot briefly
 for automated rendering/input checks. A graphical desktop is required for the
 last step. The QA injects keyboard and controller events through Godot's normal
 input path, captures native-resolution PNGs, checks the limited palette, and
@@ -255,13 +292,18 @@ completion and logging.
 This does not claim a physical controller was tested.
 
 Results, engine logs and screenshots are written under `artifacts/visual/`;
-both `qa.txt` and `field-qa.txt` must end with `PASS ALL`. The second Godot run
+`qa.txt`, `field-qa.txt`, and `menu-qa.txt` must all end with `PASS ALL`. The
+second Godot run
 starts through the normal Field entry and exercises movement, release/collision,
 equipment, encounter contact, escape, defeat/restart, victory, persisted HP/gear,
-defeated encounter removal and continued movement. Existing golden comparisons launch separate
-processes and compare exact bytes. The baseline is never regenerated by these
-commands. The current revision passes **213 isolated battle QA checks** and
-**163 field-loop QA checks** in the real engine.
+defeated encounter removal and continued movement. The third run exercises the
+Field control menu's real key/controller routing, held-movement clearing,
+nested Back behavior, window bounds and palette, live Status sheet,
+placeholders, Field-under-menu rendering, and Battle input isolation. Existing
+golden comparisons launch separate processes and compare exact bytes. The
+baseline is never regenerated by these commands. The current revision passes
+**213 isolated battle QA checks**, **163 field-loop QA checks**, and **85
+Field-menu QA checks** in the real engine.
 See [current RPG loop findings](RPG_LOOP_REPORT.md), the
 [historical equipment findings](EQUIPMENT_REPORT.md), the
 [historical stat findings](STAT_SYSTEM_REPORT.md) and the

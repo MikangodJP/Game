@@ -11,6 +11,7 @@ public partial class BattleScreen : Node2D
     private HarnessController? standalone;
     private HarnessController ui => standalone ?? game.Harness;
     private FieldScreen fieldScreen = null!;
+    private MenuScreen menuScreen = null!;
     private readonly List<(string Source, UiInput Direction)> heldMovement = [];
     private double movementDelay;
     private bool InField => standalone is null && game.Mode == GameMode.Field;
@@ -28,10 +29,13 @@ public partial class BattleScreen : Node2D
         if (args.Contains("--battle-probe") || args.Contains("--qa")) standalone = new();
         fieldScreen = new FieldScreen { Game = game };
         AddChild(fieldScreen);
+        menuScreen = new MenuScreen { Game = game, Visible = false };
+        AddChild(menuScreen);
         GetWindow().FocusExited += ClearMovement;
         RefreshScreens();
         if (args.Length >= 2 && args[0] == "--qa") CallDeferred(MethodName.StartQa, args[1]);
         if (args.Length >= 2 && args[0] == "--field-qa") CallDeferred(MethodName.StartFieldQa, args[1]);
+        if (args.Length >= 2 && args[0] == "--menu-qa") CallDeferred(MethodName.StartMenuQa, args[1]);
     }
 
     public override void _ExitTree() => GetWindow().FocusExited -= ClearMovement;
@@ -63,6 +67,7 @@ public partial class BattleScreen : Node2D
                 Key.Left or Key.A => UiInput.Left, Key.Right or Key.D => UiInput.Right,
                 Key.Enter or Key.KpEnter or Key.Space => UiInput.Confirm,
                 Key.E when InField => UiInput.Confirm,
+                Key.Tab => UiInput.Menu,
                 Key.Escape or Key.Backspace => UiInput.Back,
                 Key.F2 => UiInput.Debug, Key.R => UiInput.Restart, _ => null
             };
@@ -85,7 +90,7 @@ public partial class BattleScreen : Node2D
                 JoyButton.DpadUp => UiInput.Up, JoyButton.DpadDown => UiInput.Down,
                 JoyButton.DpadLeft => UiInput.Left, JoyButton.DpadRight => UiInput.Right,
                 JoyButton.A => UiInput.Confirm, JoyButton.B => UiInput.Back,
-                JoyButton.Start => UiInput.Restart, _ => null
+                JoyButton.Back => UiInput.Menu, JoyButton.Start => UiInput.Restart, _ => null
             };
         }
         else return;
@@ -133,14 +138,16 @@ public partial class BattleScreen : Node2D
 
     private void RefreshScreens()
     {
-        fieldScreen.Visible = standalone is null && game.Mode is GameMode.Field or GameMode.GameOver;
+        fieldScreen.Visible = standalone is null && game.Mode is GameMode.Field or GameMode.Menu or GameMode.GameOver;
+        menuScreen.Visible = standalone is null && game.Mode == GameMode.Menu;
         fieldScreen.QueueRedraw();
+        menuScreen.QueueRedraw();
         QueueRedraw();
     }
 
     public override void _Draw()
     {
-        if (standalone is null && game.Mode is GameMode.Field or GameMode.GameOver) return;
+        if (standalone is null && game.Mode is GameMode.Field or GameMode.Menu or GameMode.GameOver) return;
         Fill(0, 0, 320, 240, Ink);
         if (ui.IsPreparing)
         {

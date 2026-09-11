@@ -248,7 +248,7 @@ Add `public FieldMenuController FieldMenu { get; } = new();`. In Field, Menu inp
 
 Expected: all headless tests pass and existing engine QA remains green before rendering exists, because no physical Tab binding exists yet.
 
-- [ ] **Step 5: Commit the framework**
+- [x] **Step 5: Commit the framework**
 
 ```bash
 git add docs/superpowers/plans/2026-09-11-field-control-menu-first-slice.md \
@@ -275,7 +275,7 @@ git commit -m "feat: add field control menu framework"
 - Consumes: `GameController.FieldMenu.BuildView(Game.State.Player)`.
 - Produces: a drawing-only `MenuScreen : Node2D`, physical Menu input, and `--menu-qa`.
 
-- [ ] **Step 1: Add the failing engine QA surface**
+- [x] **Step 1: Add the failing engine QA surface**
 
 Create `MenuQa.cs` as another `partial class BattleScreen`. It must reference the future `menuScreen` field and assert normal startup, real Tab entry, held-movement clearing, root navigation, child/panel hierarchy, Status data, System entries, gamepad Back closure, resumed movement, and Tab inertness during Battle.
 
@@ -286,7 +286,7 @@ if (args.Length >= 2 && args[0] == "--menu-qa")
     CallDeferred(MethodName.StartMenuQa, args[1]);
 ```
 
-- [ ] **Step 2: Build and verify the new QA surface fails**
+- [x] **Step 2: Build and verify the new QA surface fails**
 
 Run:
 
@@ -296,7 +296,7 @@ pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 
 Expected: Visual compilation failure because `MenuScreen` and `menuScreen` do not exist.
 
-- [ ] **Step 3: Implement `MenuScreen`**
+- [x] **Step 3: Implement `MenuScreen`**
 
 `MenuScreen` contains no navigation or gameplay logic. It draws `FieldMenuView` using:
 
@@ -313,7 +313,7 @@ Use one `ChildRect` function for all command and panel windows. It aligns to the
 
 Expose an internal read-only `LastWindowBounds` projection strictly for engine QA. It must contain root, child frames, and active panel rectangles from the most recent draw.
 
-- [ ] **Step 4: Wire physical input and draw order**
+- [x] **Step 4: Wire physical input and draw order**
 
 In `BattleScreen`:
 
@@ -327,7 +327,7 @@ Create `menuScreen = new MenuScreen { Game = game, Visible = false }` and add it
 
 In `FieldScreen`, omit only the two bottom control-hint lines while `Game.Mode == GameMode.Menu`; do not change map, token, or HUD rendering.
 
-- [ ] **Step 5: Run the new Menu QA directly**
+- [x] **Step 5: Run the new Menu QA directly**
 
 After building Visual, run Godot with:
 
@@ -339,7 +339,7 @@ Expected: `MENU QA PASS: <count> checks`, `menu-qa.txt` ending in `PASS ALL`, an
 
 The QA must verify every `LastWindowBounds` rectangle lies inside 320×240, root-window pixels contain only black and white, a cursor pixel is white, a sampled Field pixel outside the windows is unchanged, held movement stops across Tab, and a new movement press works after close.
 
-- [ ] **Step 6: Run existing battle and field QA unchanged**
+- [x] **Step 6: Run existing battle and field QA unchanged**
 
 Run the unified verification. Expected: battle stays at 213, field stays at 163, and both existing reports still end `PASS ALL`.
 
@@ -357,7 +357,7 @@ Run the unified verification. Expected: battle stays at 213, field stays at 163,
 - Consumes: `--menu-qa` from Task 3.
 - Produces: one full verification entry point covering all three engine suites and documentation matching the implemented architecture.
 
-- [ ] **Step 1: Add Menu QA to `-Verify`**
+- [x] **Step 1: Add Menu QA to `-Verify`**
 
 After the existing field run, invoke:
 
@@ -371,15 +371,15 @@ if ((Get-Content (Join-Path $artifacts 'menu-qa.txt') -Tail 1) -ne 'PASS ALL') {
 
 Keep the prior runs and checks intact.
 
-- [ ] **Step 2: Update user documentation**
+- [x] **Step 2: Update user documentation**
 
 Document Tab / controller View-Select entry, the exact 3×2 grid, cursor-only black/white windows, Magic/System hierarchy, real Status sheet, placeholders, Field visibility, Back semantics, and the new presentation/menu QA counts. Explicitly state that EQUIP is read-only information and does not enter Preparation in this slice.
 
-- [ ] **Step 3: Resolve the architecture-document conflict**
+- [x] **Step 3: Resolve the architecture-document conflict**
 
 In `MENU_ARCHITECTURE.md`, mark the visual slice as implemented, record that the multiplayer concern is resolved by local-only menu mode, and replace obsolete Stage 0-blocked wording. In `WORLD_ARCHITECTURE.md`, replace Stage 7's `MenuTree`/BattleMenu extraction prescription with the approved separation: `BattleMenu` remains unchanged; `FieldMenuTree` and `FieldMenuController` are separate; only low-level visual primitives may be shared in a later independently gated refactor. Do not change procedural-world requirements.
 
-- [ ] **Step 4: Run the complete regression gate**
+- [x] **Step 4: Run the complete regression gate**
 
 Run:
 
@@ -389,7 +389,7 @@ pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 
 Expected: exit 0; core Debug and Release `58/58`; all presentation tests pass; battle `213`; field `163`; menu QA passes; `qa.txt`, `field-qa.txt`, and `menu-qa.txt` each end `PASS ALL`.
 
-- [ ] **Step 5: Commit rendering, QA, and docs**
+- [x] **Step 5: Commit rendering, QA, and docs**
 
 ```bash
 git add probes/phase1a/Visual/MenuScreen.cs \
@@ -424,11 +424,11 @@ pwsh ./probes/phase1a/launch-visual.ps1
 
 Move on Field, open with Tab, navigate all six root cells, open Magic → Adjustment, unwind with Escape, view Status, inspect System, close with Tab, resume movement, enter Battle, finish or flee, return to Field, and reopen the menu. Confirm Battle visuals are unchanged.
 
-- [ ] **Step 2: Inspect generated menu captures**
+- [x] **Step 2: Inspect generated menu captures**
 
 Verify native 320×240 dimensions, crisp one-pixel borders, black/white-only menu windows, cursor-only selection, child/panel bounds, live field outside windows, live Status values, and restored Field HUD after close.
 
-- [ ] **Step 3: Audit the final diff and repository contents**
+- [x] **Step 3: Audit the final diff and repository contents**
 
 Run:
 
