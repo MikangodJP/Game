@@ -1,4 +1,5 @@
 using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Rules;
 
 namespace Phase1A.Preparation;
@@ -14,16 +15,29 @@ public sealed class CharacterPreparation
     public int Hp { get; private set; }
     public int Mp { get; private set; }
     public EquipmentLoadout Loadout { get; private set; } = EquipmentLoadout.Empty;
+    public IReadOnlyList<BaseMagicDefinition> KnownBaseMagics { get; }
+    public ChantlessMagicConfiguration ChantlessMagic { get; private set; }
     public bool InBattle => activeBattle is not null && (coordinatorOwnsCompletion || !activeBattle.IsFinished);
 
     public CharacterPreparation(CharacterStats baseStats, int? hp = null, int? mp = null)
     {
         baseStats.Validate();
         BaseStats = baseStats;
+        KnownBaseMagics = Array.AsReadOnly(new[] { PrototypeMagic.Fireball });
+        ChantlessMagic = new(PrototypeMagic.Fireball,
+            QuarterStepMultiplier.DefaultSteps, QuarterStepMultiplier.DefaultSteps);
         Hp = hp ?? baseStats.MaxHp;
         Mp = mp ?? baseStats.MaxMp;
         if (Hp < 0 || Hp > baseStats.MaxHp) throw new ArgumentOutOfRangeException(nameof(hp));
         if (Mp < 0 || Mp > baseStats.MaxMp) throw new ArgumentOutOfRangeException(nameof(mp));
+    }
+
+    public bool TryConfigureChantlessMagic(ChantlessMagicConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (InBattle || !KnownBaseMagics.Contains(configuration.BaseMagic)) return false;
+        ChantlessMagic = configuration;
+        return true;
     }
 
     public bool TryEquip(EquipmentSlot slot, EquipmentDefinition? item)

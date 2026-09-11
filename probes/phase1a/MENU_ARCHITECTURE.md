@@ -1,13 +1,14 @@
 # Field Control Menu Architecture — retro command windows, hierarchical navigation, TAB entry
 
-**Status:** **FIRST VISUAL SLICE IMPLEMENTED 2026-09-11.** Owner decisions are
+**Status:** **FIRST VISUAL SLICE AND CHANTLESS CONFIGURATION IMPLEMENTED 2026-09-11.** Owner decisions are
 recorded in §19; the macOS preflight in §20 completed before implementation.
 **Date:** 2026-09-11
 **Scope:** a keyboard-driven Field command menu that becomes the game's main control
 centre · two-row root grid · contextual pop-out windows · hierarchical back stack ·
 `GameMode` and input ownership · retro black/light-border pixel presentation.
-**Out of scope:** Items, Magic, Skills, Settings, For Testing, and every other
-gameplay system the menu will eventually host.
+**Out of scope for the original slice:** Items, Skills, Settings, For Testing,
+and every other gameplay system the menu will eventually host. The approved
+Chantless Magic V1 extension is recorded in §21.
 
 **Relationship to existing documents.** `ARCHITECTURE_PROPOSAL.md` (v0.1) and
 `ARCHITECTURE_v0.2.md` govern the production architecture. `WORLD_ARCHITECTURE.md`
@@ -1298,3 +1299,28 @@ committed.
 
 **Status: first visual slice implemented. Stage 0 is complete, Q5 is resolved,
 and the unified gate covers core, presentation, battle, field, and menu QA.**
+
+---
+
+## 21. Chantless Magic V1 extension
+
+The Field `MAGIC > ADJUSTMENT` placeholder is now a transactional editor for the
+player-owned Fireball configuration. `CharacterPreparation` owns a read-only
+learned Base Magic list (Fireball by default) and one authoritative
+`ChantlessMagicConfiguration`. Menu state owns only a temporary draft.
+
+Size and Output are exact integer quarter steps `1..16`, displayed as
+`0.25..4.00`, with default `4 = 1.00`. Apply commits; Escape cancels. The retro
+screen draws two 16-cell logical sliders without a mouse or new palette values.
+Passive Info/Placeholder panels now accept Enter or Escape for one-layer
+dismissal; Adjustment retains explicit Enter-on-Apply behavior.
+
+One cost calculator implements
+`ceil(BaseMpCost × Output × (0.5 + 0.5 × Size))` with Fireball Base MP 4.
+Fireball Base Damage 8 is scaled by Output, then existing Magic adds offense and
+half Resistance mitigates it. Size deliberately does not multiply single-target
+damage. Agility remains unused.
+
+This intermediate commit does not activate Battle casting. The existing
+`MAGIC > ELEMENTAL MAGIC > Fire` leaf and every Transformation Magic leaf remain
+WIP until the separately bisectable Battle integration commit.

@@ -1,6 +1,6 @@
 namespace Phase1A.Rules;
 
-// Temporary, closed stat set. Magic, Resistance and Agility have no gameplay consumers yet.
+// Temporary, closed stat set. Agility has no gameplay consumer yet.
 public readonly record struct CharacterStats(
     int MaxHp, int MaxMp, int Strength, int Defense, int Magic, int Resistance, int Agility)
 {
@@ -44,5 +44,15 @@ public static class PhysicalDamage
         // Integral math, with a wider intermediate to prevent silent overflow; no stat cap.
         return checked((int)Math.Max(1L,
             (long)basePower + attacker.Strength - defender.Defense / 2 + variance));
+    }
+}
+
+public static class MagicalDamage
+{
+    public static int Calculate(int basePower, CharacterStats caster, CharacterStats target)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(basePower);
+        return checked((int)Math.Max(1L,
+            (long)basePower + caster.Magic - target.Resistance / 2));
     }
 }

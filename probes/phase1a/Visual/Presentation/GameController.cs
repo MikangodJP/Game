@@ -62,7 +62,7 @@ public sealed class GameController
                 else if (input == UiInput.Down) FieldMenu.Move(0, 1);
                 else if (input == UiInput.Left) FieldMenu.Move(-1, 0);
                 else if (input == UiInput.Right) FieldMenu.Move(1, 0);
-                else if (input == UiInput.Confirm) FieldMenu.Confirm();
+                else if (input == UiInput.Confirm) FieldMenu.Confirm(State.Player);
                 break;
             case GameMode.Preparation:
                 Harness.Handle(input);

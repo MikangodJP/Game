@@ -1,4 +1,5 @@
 using Godot;
+using Phase1A.Magic;
 using Phase1A.Visual.Presentation;
 
 namespace Phase1A.Visual;
@@ -10,6 +11,7 @@ public partial class MenuScreen : Node2D
     private static readonly Color MenuPaper = new("ffffff");
     private static readonly Color MenuDisabled = new("7f7f7f");
     private static readonly Rect2I RootRect = new(8, 8, 160, 54);
+    private static readonly Rect2I AdjustmentRect = new(40, 28, 240, 180);
     private IReadOnlyList<Rect2I> lastWindowBounds = Array.Empty<Rect2I>();
 
     public GameController Game { get; set; } = null!;
@@ -40,9 +42,14 @@ public partial class MenuScreen : Node2D
 
         if (view.ActivePanel is { } panel)
         {
-            var size = PanelSize(panel);
-            var parent = view.Windows[^1];
-            var rect = ChildRect(bounds[^1], parent, size.X, size.Y, view.Windows.Count);
+            Rect2I rect;
+            if (panel.Kind == FieldMenuPanelKind.Adjustment) rect = AdjustmentRect;
+            else
+            {
+                var size = PanelSize(panel);
+                var parent = view.Windows[^1];
+                rect = ChildRect(bounds[^1], parent, size.X, size.Y, view.Windows.Count);
+            }
             bounds.Add(rect);
             DrawPanel(panel, rect);
         }
@@ -72,6 +79,11 @@ public partial class MenuScreen : Node2D
         Window(rect);
         Text(panel.Title, rect.Position.X + 6, rect.Position.Y + 6, MenuPaper);
         Fill(rect.Position.X + 1, rect.Position.Y + 18, rect.Size.X - 2, 1, MenuPaper);
+        if (panel.Kind == FieldMenuPanelKind.Adjustment)
+        {
+            DrawAdjustment(panel.Adjustment ?? throw new InvalidOperationException("Adjustment panel needs a view."), rect);
+            return;
+        }
         if (panel.Kind == FieldMenuPanelKind.Status)
         {
             var y = rect.Position.Y + 25;
@@ -92,6 +104,41 @@ public partial class MenuScreen : Node2D
         var lines = Wrap(panel.Lines, Math.Max(1, (rect.Size.X - 12) / 6));
         for (var i = 0; i < lines.Count; i++)
             Text(lines[i], rect.Position.X + 6, rect.Position.Y + 26 + i * 10, MenuPaper);
+    }
+
+    private void DrawAdjustment(FieldMenuAdjustmentView adjustment, Rect2I rect)
+    {
+        var left = rect.Position.X + 14;
+        var right = rect.End.X - 14;
+        Text("BASE", left, rect.Position.Y + 27, MenuPaper);
+        Text(adjustment.BaseMagic, right - TextWidth(adjustment.BaseMagic), rect.Position.Y + 27, MenuPaper);
+
+        AdjustmentRow("SIZE", adjustment.SizeMultiplier, 0, rect.Position.Y + 48);
+        DrawSlider(left, rect.Position.Y + 61, adjustment.SizeSteps);
+        AdjustmentRow("OUTPUT", adjustment.OutputMultiplier, 1, rect.Position.Y + 81);
+        DrawSlider(left, rect.Position.Y + 94, adjustment.OutputSteps);
+
+        Text("MP COST", left, rect.Position.Y + 119, MenuPaper);
+        var cost = adjustment.MpCost.ToString();
+        Text(cost, right - TextWidth(cost), rect.Position.Y + 119, MenuPaper);
+        if (adjustment.SelectedIndex == 2) Text(">", left, rect.Position.Y + 145, MenuPaper);
+        Text("APPLY", left + 8, rect.Position.Y + 145, MenuPaper);
+        return;
+
+        void AdjustmentRow(string label, string value, int index, int y)
+        {
+            if (adjustment.SelectedIndex == index) Text(">", left, y, MenuPaper);
+            Text(label, left + 8, y, MenuPaper);
+            Text(value, right - TextWidth(value), y, MenuPaper);
+        }
+    }
+
+    private void DrawSlider(int x, int y, int steps)
+    {
+        Fill(x, y, QuarterStepMultiplier.MaxSteps * 5 + 2, 9, MenuPaper);
+        Fill(x + 1, y + 1, QuarterStepMultiplier.MaxSteps * 5, 7, MenuInk);
+        for (var step = 0; step < QuarterStepMultiplier.MaxSteps; step++)
+            if (step < steps) Fill(x + 1 + step * 5, y + 1, 4, 7, MenuPaper);
     }
 
     private static Vector2I CommandSize(FieldMenuWindowView window)

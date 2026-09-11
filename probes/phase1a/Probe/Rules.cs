@@ -4,7 +4,7 @@ namespace Phase1A.Rules;
 
 public enum Side { Adventurers, Monsters }
 public enum OpKind { Damage, Heal, ApplyStatus, SpendMana }
-public enum DamageKind { Prototype, Physical }
+public enum DamageKind { Prototype, Physical, Magical }
 public enum OpStatus { Applied, NoOp, Rejected }
 public enum TargetScope { Selected, Self, Enemies, PriorTargets }
 
@@ -54,6 +54,7 @@ public static class Op
                 amount = node.DamageKind switch
                 {
                     DamageKind.Physical => PhysicalDamage.Calculate(magnitude, context.Caster.EffectiveStats, target.EffectiveStats),
+                    DamageKind.Magical => MagicalDamage.Calculate(magnitude, context.Caster.EffectiveStats, target.EffectiveStats),
                     DamageKind.Prototype => Math.Max(0, magnitude - target.Defense),
                     _ => throw new InvalidOperationException("Unknown probe damage kind.")
                 };
