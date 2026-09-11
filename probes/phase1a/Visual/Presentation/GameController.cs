@@ -4,7 +4,7 @@ using Phase1A.Preparation;
 
 namespace Phase1A.Visual.Presentation;
 
-public enum GameMode { Field, Preparation, Battle, GameOver }
+public enum GameMode { Field, Menu, Preparation, Battle, GameOver }
 
 // Coordinates the existing preparation and battle controllers. Persistent state
 // stays above both; neither renderer decides how battle results affect the field.
@@ -14,6 +14,7 @@ public sealed class GameController
     public GameState State { get; private set; }
     public GameMode Mode { get; private set; }
     public HarnessController Harness { get; private set; }
+    public FieldMenuController FieldMenu { get; } = new();
 
     public GameController(ulong seed = Scenario.GoldenSeed, CharacterPreparation? player = null)
     {
@@ -40,11 +41,28 @@ public sealed class GameController
         switch (Mode)
         {
             case GameMode.Field:
-                if (input == UiInput.Confirm)
+                if (input == UiInput.Menu)
+                {
+                    FieldMenu.Open();
+                    Mode = GameMode.Menu;
+                }
+                else if (input == UiInput.Confirm)
                 {
                     Harness = new(State.Player, seed: seed);
                     Mode = GameMode.Preparation;
                 }
+                break;
+            case GameMode.Menu:
+                if (input == UiInput.Menu || input == UiInput.Back && FieldMenu.Back())
+                {
+                    FieldMenu.Close();
+                    Mode = GameMode.Field;
+                }
+                else if (input == UiInput.Up) FieldMenu.Move(0, -1);
+                else if (input == UiInput.Down) FieldMenu.Move(0, 1);
+                else if (input == UiInput.Left) FieldMenu.Move(-1, 0);
+                else if (input == UiInput.Right) FieldMenu.Move(1, 0);
+                else if (input == UiInput.Confirm) FieldMenu.Confirm();
                 break;
             case GameMode.Preparation:
                 Harness.Handle(input);

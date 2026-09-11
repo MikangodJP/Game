@@ -280,7 +280,7 @@ var tests = new (string Name, Action Run)[]
         Equal(log, ui.Session.MachineText);
     })
 };
-tests = tests.Concat(FieldLoopTests.All).ToArray();
+tests = tests.Concat(FieldLoopTests.All).Concat(FieldMenuTests.All).ToArray();
 var failed = 0;
 foreach (var (name, run) in tests)
 {

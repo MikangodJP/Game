@@ -5,7 +5,7 @@ using Phase1A.Rules;
 namespace Phase1A.Visual.Presentation;
 
 public enum ScreenMode { Preparation, EquipmentSlots, EquipmentItems, Menu, Targets, Messages, Wip, Ended, MachineLog }
-public enum UiInput { Up, Down, Left, Right, Confirm, Back, Debug, Restart }
+public enum UiInput { Up, Down, Left, Right, Confirm, Back, Menu, Debug, Restart }
 
 public sealed class HarnessController
 {
