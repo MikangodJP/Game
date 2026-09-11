@@ -61,6 +61,11 @@ public sealed class FieldMenuController
 
     public void Confirm()
     {
+        if (activePanel is { PanelKind: FieldMenuPanelKind.Info or FieldMenuPanelKind.Placeholder })
+        {
+            activePanel = null;
+            return;
+        }
         if (activePanel is not null || CurrentEntries.Count == 0) return;
         var selected = CurrentEntries[SelectedIndex];
         if (!selected.Enabled) return;

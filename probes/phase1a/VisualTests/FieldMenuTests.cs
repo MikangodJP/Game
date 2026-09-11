@@ -71,6 +71,32 @@ internal static class FieldMenuTests
             Check(!menu.Back(), "second Back pops the child frame");
             Equal(1, menu.Depth);
         }),
+        ("Enter dismisses one passive Field panel without closing its parent", () =>
+        {
+            var game = new GameController();
+            game.Handle(UiInput.Menu);
+            game.Handle(UiInput.Right); // Magic.
+            game.Handle(UiInput.Confirm);
+            game.Handle(UiInput.Down); game.Handle(UiInput.Down); // Information.
+            game.Handle(UiInput.Confirm);
+            Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel is not null,
+                "Information opens a passive panel");
+
+            game.Handle(UiInput.Confirm);
+
+            Equal(GameMode.Menu, game.Mode);
+            Equal(2, game.FieldMenu.Depth);
+            Equal("INFORMATION", game.FieldMenu.CurrentEntries[game.FieldMenu.SelectedIndex].Label);
+            Check(game.FieldMenu.BuildView(game.State.Player).ActivePanel is null,
+                "Enter dismisses only the passive panel");
+
+            game.Handle(UiInput.Back); // Root, still on Magic.
+            game.Handle(UiInput.Down); game.Handle(UiInput.Left); // Status.
+            game.Handle(UiInput.Confirm);
+            game.Handle(UiInput.Confirm);
+            Equal(FieldMenuPanelKind.Status,
+                game.FieldMenu.BuildView(game.State.Player).ActivePanel!.Kind);
+        }),
         ("Every reachable non-Back leaf produces a truthful panel", () =>
         {
             var cases = new (string[] Path, FieldMenuPanelKind Kind, string FirstLine)[]
