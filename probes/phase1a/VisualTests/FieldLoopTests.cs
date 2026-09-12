@@ -69,8 +69,8 @@ internal static class FieldLoopTests
             Contact(game);
             var contactPosition = field.PlayerPosition;
             Equal(70, game.Harness.Session.View.Hero.Hp); Equal(7, game.Harness.Session.View.Hero.Mp);
-            Equal(15, game.Harness.Session.View.Hero.EffectiveStats.Strength);
-            Equal(12, game.Harness.Session.View.Hero.EffectiveStats.Defense);
+            Equal(18, game.Harness.Session.View.Hero.EffectiveStats.Strength);
+            Equal(10, game.Harness.Session.View.Hero.EffectiveStats.Defense);
             Choose(game, "MAGIC"); Choose(game, "CHANTLESS"); Choose(game, "ELEMENTAL MAGIC"); Choose(game, "Fire");
             Equal(ScreenMode.MagicAdjustment, game.Harness.Mode);
             game.Handle(UiInput.Right); game.Handle(UiInput.Down); game.Handle(UiInput.Right);
@@ -82,7 +82,7 @@ internal static class FieldLoopTests
                 "configured Fireball crosses the field encounter boundary");
             for (var turn = 0; turn < 20 && !game.Harness.Session.View.Finished; turn++)
             {
-                Choose(game, "ATTACK"); game.Handle(UiInput.Confirm); FinishMessages(game);
+                OpenBasicTarget(game); game.Handle(UiInput.Confirm); FinishMessages(game);
             }
             Equal(Outcome.Victory, game.Harness.Session.Result!.Outcome);
             Equal(ScreenMode.Ended, game.Harness.Mode);
@@ -184,6 +184,15 @@ internal static class FieldLoopTests
             game.Handle(ui.Menu.SelectedRow < index / ui.Menu.Columns ? UiInput.Down : UiInput.Up);
         while (ui.Menu.SelectedColumn < index % ui.Menu.Columns) game.Handle(UiInput.Right);
         game.Handle(UiInput.Confirm);
+    }
+    private static void OpenBasicTarget(GameController game)
+    {
+        Choose(game, "ATTACK");
+        Equal(ScreenMode.PhysicalActions, game.Harness.Mode);
+        game.Handle(UiInput.Down);
+        game.Handle(UiInput.Down);
+        game.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Targets, game.Harness.Mode);
     }
     private static void FinishMessages(GameController game)
     {

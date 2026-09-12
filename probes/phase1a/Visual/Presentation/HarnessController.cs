@@ -5,9 +5,9 @@ using Phase1A.Rules;
 
 namespace Phase1A.Visual.Presentation;
 
-public enum ScreenMode { Preparation, EquipmentSlots, EquipmentItems, Menu, MagicAdjustment, Targets, Messages, Wip, Ended, MachineLog }
+public enum ScreenMode { Preparation, EquipmentSlots, EquipmentItems, Menu, PhysicalActions, MagicAdjustment, Targets, Messages, Wip, Ended, MachineLog }
 public enum UiInput { Up, Down, Left, Right, Confirm, Back, Menu, Debug, Restart }
-public enum TargetAction { None, Attack, Fireball }
+public enum TargetAction { None, BasicAttack, Technique, Fireball }
 public sealed record BattleMagicAdjustmentView(
     string Method,
     string BaseMagic,
@@ -28,6 +28,7 @@ public sealed class HarnessController
     private BattleSession? session;
     private ChantlessMagicConfiguration? magicDraft;
     private int magicAdjustmentSelected;
+    private string? pendingTechniqueId;
     public BattleSession Session => session ?? throw new InvalidOperationException("Start battle from preparation first.");
     public CharacterPreparation Preparation { get; private set; }
     public bool IsWorldBound { get; }
@@ -48,6 +49,12 @@ public sealed class HarnessController
     public ScreenMode Mode { get; private set; }
     public int TargetIndex { get; private set; }
     public TargetAction PendingTargetAction { get; private set; }
+    public int PhysicalActionIndex { get; private set; }
+    public PhysicalStyleView PhysicalStyle => Session.View.PhysicalStyle ??
+        throw new InvalidOperationException("The player Battle requires a Style profile.");
+    public IReadOnlyList<string> PhysicalActionLabels =>
+        PhysicalStyle.Techniques.Select(technique => technique.DisplayName)
+            .Append("BASIC ATTACK").ToArray();
     public int DebugOffset { get; private set; }
     public string WipLabel { get; private set; } = "";
     public string WipMessage { get; private set; } = "";
@@ -68,10 +75,14 @@ public sealed class HarnessController
         ScreenMode.Preparation => "PREPARATION",
         ScreenMode.EquipmentSlots => "EQUIPMENT",
         ScreenMode.EquipmentItems => "EQUIPMENT > " + SelectedSlot,
+        ScreenMode.PhysicalActions => "ATTACK > " + PhysicalStyle.ActiveLabel +
+            (PhysicalStyle.Shifted ? " > SHIFT" : ""),
         ScreenMode.MagicAdjustment => "CHANTLESS > FIREBALL",
         ScreenMode.Targets => PendingTargetAction switch
         {
             TargetAction.Fireball => "FIREBALL > CHOOSE TARGET",
+            TargetAction.BasicAttack => "BASIC ATTACK > CHOOSE TARGET",
+            TargetAction.Technique => PendingTechniqueName() + " > CHOOSE TARGET",
             _ => "ATTACK > CHOOSE TARGET"
         },
         _ => Menu.Breadcrumb
@@ -141,6 +152,8 @@ public sealed class HarnessController
                     PreparationIndex = 0; SlotIndex = 0; EquipmentIndex = 0;
                     TargetIndex = 0; DebugOffset = 0; BattleLines = [];
                     magicDraft = null; magicAdjustmentSelected = 0;
+                    PhysicalActionIndex = 0; pendingTechniqueId = null;
+                    PendingTargetAction = TargetAction.None;
                 }
                 break;
             case ScreenMode.Targets:
@@ -152,8 +165,14 @@ public sealed class HarnessController
                     if (TargetIndex == Targets.Count)
                         CancelTargeting();
                     else if (PendingTargetAction == TargetAction.Fireball) SubmitFireball(Targets[TargetIndex].Id);
-                    else Submit(MenuAction.Attack, Targets[TargetIndex].Id);
+                    else if (PendingTargetAction == TargetAction.Technique)
+                        SubmitTechnique(Targets[TargetIndex].Id);
+                    else if (PendingTargetAction == TargetAction.BasicAttack)
+                        SubmitBasicAttack(Targets[TargetIndex].Id);
                 }
+                break;
+            case ScreenMode.PhysicalActions:
+                HandlePhysicalActions(input);
                 break;
             case ScreenMode.MagicAdjustment:
                 HandleMagicAdjustment(input);
@@ -170,7 +189,10 @@ public sealed class HarnessController
                     switch (choice.Kind)
                     {
                         case ChoiceKind.Attack:
-                            PendingTargetAction = TargetAction.Attack; TargetIndex = 0; Mode = ScreenMode.Targets;
+                            PendingTargetAction = TargetAction.None;
+                            pendingTechniqueId = null;
+                            PhysicalActionIndex = 0;
+                            Mode = ScreenMode.PhysicalActions;
                             break;
                         case ChoiceKind.Fireball:
                             magicDraft = Preparation.LastUsedChantlessMagic(PrototypeMagic.Fireball);
@@ -234,6 +256,18 @@ public sealed class HarnessController
         if (!Session.Submit(action, target)) return;
         BeginMessagesAfterAction();
     }
+    private void SubmitBasicAttack(int target)
+    {
+        if (!Session.SubmitBasicAttack(target)) return;
+        BeginMessagesAfterAction();
+    }
+    private void SubmitTechnique(int target)
+    {
+        var techniqueId = pendingTechniqueId ??
+            throw new InvalidOperationException("Technique targeting requires a Technique ID.");
+        if (!Session.SubmitTechnique(techniqueId, target)) return;
+        BeginMessagesAfterAction();
+    }
     private void SubmitFireball(int target)
     {
         var draft = magicDraft ?? throw new InvalidOperationException("Fireball targeting requires an adjustment draft.");
@@ -245,10 +279,50 @@ public sealed class HarnessController
     private void BeginMessagesAfterAction()
     {
         PendingTargetAction = TargetAction.None;
+        pendingTechniqueId = null;
         Menu.Reset();
         magicDraft = null;
         messageReturnMode = ScreenMode.Menu;
         messageOffset = 0; Mode = ScreenMode.Messages; ShowPage();
+    }
+
+    private void HandlePhysicalActions(UiInput input)
+    {
+        if (input == UiInput.Up)
+            PhysicalActionIndex = Math.Max(0, PhysicalActionIndex - 1);
+        else if (input == UiInput.Down)
+            PhysicalActionIndex = Math.Min(
+                PhysicalActionLabels.Count - 1, PhysicalActionIndex + 1);
+        else if (input is UiInput.Left or UiInput.Right)
+        {
+            var style = PhysicalStyle;
+            var delta = input == UiInput.Left ? -1 : 1;
+            var next = Math.Clamp(
+                style.ActiveIndex + delta, 0, style.KnownStyles.Length - 1);
+            Session.TryChangeStyle(style.KnownStyles[next].Id);
+        }
+        else if (input == UiInput.Back)
+        {
+            PendingTargetAction = TargetAction.None;
+            pendingTechniqueId = null;
+            Mode = ScreenMode.Menu;
+        }
+        else if (input == UiInput.Confirm)
+        {
+            var techniques = PhysicalStyle.Techniques;
+            if (PhysicalActionIndex < techniques.Length)
+            {
+                pendingTechniqueId = techniques[PhysicalActionIndex].Id;
+                PendingTargetAction = TargetAction.Technique;
+            }
+            else
+            {
+                pendingTechniqueId = null;
+                PendingTargetAction = TargetAction.BasicAttack;
+            }
+            TargetIndex = 0;
+            Mode = ScreenMode.Targets;
+        }
     }
 
     private void HandleMagicAdjustment(UiInput input)
@@ -289,10 +363,20 @@ public sealed class HarnessController
 
     private void CancelTargeting()
     {
-        Mode = PendingTargetAction == TargetAction.Fireball
-            ? ScreenMode.MagicAdjustment
-            : ScreenMode.Menu;
+        Mode = PendingTargetAction switch
+        {
+            TargetAction.Fireball => ScreenMode.MagicAdjustment,
+            TargetAction.BasicAttack or TargetAction.Technique => ScreenMode.PhysicalActions,
+            _ => ScreenMode.Menu
+        };
         PendingTargetAction = TargetAction.None;
+        pendingTechniqueId = null;
+    }
+    private string PendingTechniqueName()
+    {
+        var techniqueId = pendingTechniqueId ??
+            throw new InvalidOperationException("Technique target breadcrumb requires an identity.");
+        return PhysicalStyle.Techniques.Single(technique => technique.Id == techniqueId).DisplayName;
     }
     private void ShowPage() => BattleLines = Session.LastMessages.Skip(messageOffset).Take(3).ToArray();
 }

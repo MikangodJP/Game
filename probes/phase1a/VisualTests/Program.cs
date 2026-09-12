@@ -3,6 +3,7 @@ using Phase1A.Encounter;
 using Phase1A.Magic;
 using Phase1A.Preparation;
 using Phase1A.Rules;
+using Phase1A.Styles;
 using Phase1A.Visual.Presentation;
 
 var tests = new (string Name, Action Run)[]
@@ -12,7 +13,7 @@ var tests = new (string Name, Action Run)[]
         var session = new BattleSession();
         var log = session.MachineText;
         var initial = session.View;
-        Equal(new CharacterStats(80, 12, 12, 8, 6, 6, 10), initial.Hero.EffectiveStats);
+        Equal(new CharacterStats(80, 12, 14, 6, 6, 6, 10), initial.Hero.EffectiveStats);
         Equal(new CharacterStats(38, 2, 8, 5, 2, 3, 6), initial.Enemies[0].EffectiveStats);
         Equal(new CharacterStats(46, 0, 10, 4, 1, 3, 12), initial.Enemies[1].EffectiveStats);
         foreach (var actor in initial.Enemies.Prepend(initial.Hero))
@@ -34,11 +35,115 @@ var tests = new (string Name, Action Run)[]
         Check(untouched.Submit(MenuAction.Attack, 2), "control attack accepted");
         Equal(untouched.MachineText, session.MachineText);
     }),
+    ("Battle read model exposes immutable active Style and current Techniques", () =>
+    {
+        var session = new BattleSession();
+        var style = session.View.PhysicalStyle ?? throw new Exception("player Style missing");
+        Check(style.KnownStyles.Select(option => option.BattleLabel).SequenceEqual(
+                new[] { "SWORD GOD", "WATER GOD", "NORTH GOD" }),
+            "known Style labels");
+        Equal(0, style.ActiveIndex);
+        Equal(PrototypeCombatStyles.SwordGod.Id, style.ActiveStyleId);
+        Equal("SWORD GOD", style.ActiveLabel);
+        Equal(PrototypeCombatStyles.SwordGod.Id, style.TurnStartStyleId);
+        Check(!style.Shifted, "Sword starts established");
+        Check(style.Techniques.Select(technique => technique.DisplayName)
+            .SequenceEqual(new[] { "STRAIGHT SLASH", "HEAVY SLASH" }),
+            "Sword Techniques");
+
+        var edited = style with { ActiveStyleId = "fixture:copy" };
+        Equal("fixture:copy", edited.ActiveStyleId);
+        Equal(PrototypeCombatStyles.SwordGod.Id,
+            session.View.PhysicalStyle!.ActiveStyleId);
+        Check(session.TryChangeStyle(PrototypeCombatStyles.WaterGod.Id),
+            "session forwards an immediate Style change");
+        var water = session.View.PhysicalStyle!;
+        Equal("WATER GOD", water.ActiveLabel);
+        Check(water.Shifted, "Water is shifted on the same turn");
+        Check(water.Techniques.Select(technique => technique.DisplayName)
+            .SequenceEqual(new[] { "STEADY CUT", "PRECISE CUT" }),
+            "Water Techniques replace Sword Techniques");
+    }),
+    ("ATTACK is one three-row Physical Style screen with real clamped switching and Back persistence", () =>
+    {
+        var ui = Started();
+        OpenPhysical(ui);
+        Check(ui.PhysicalActionLabels.SequenceEqual(
+                new[] { "STRAIGHT SLASH", "HEAVY SLASH", "BASIC ATTACK" }),
+            "Sword physical actions");
+        Equal("ATTACK > SWORD GOD", ui.Breadcrumb);
+        var actions = ui.Session.Events.Count(e => e.Kind == "ActionStarted");
+        ui.Handle(UiInput.Right);
+        Equal(PrototypeCombatStyles.WaterGod.Id,
+            ui.Session.View.PhysicalStyle!.ActiveStyleId);
+        Check(ui.PhysicalActionLabels.SequenceEqual(
+                new[] { "STEADY CUT", "PRECISE CUT", "BASIC ATTACK" }),
+            "Water physical actions");
+        Equal("ATTACK > WATER GOD > SHIFT", ui.Breadcrumb);
+        Check(ui.Session.IsPlayerTurn, "Style switching keeps the player turn");
+        Equal(actions, ui.Session.Events.Count(e => e.Kind == "ActionStarted"));
+
+        ui.Handle(UiInput.Down);
+        ui.Handle(UiInput.Down);
+        ui.Handle(UiInput.Left);
+        Equal(2, ui.PhysicalActionIndex);
+        Check(!ui.Session.View.PhysicalStyle!.Shifted,
+            "return to turn-start Style removes Shift");
+        ui.Handle(UiInput.Confirm);
+        Equal(ScreenMode.Targets, ui.Mode);
+        Equal("BASIC ATTACK > CHOOSE TARGET", ui.Breadcrumb);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.PhysicalActions, ui.Mode);
+        Equal(2, ui.PhysicalActionIndex);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.Menu, ui.Mode);
+        Equal(PrototypeCombatStyles.SwordGod.Id,
+            ui.Session.View.PhysicalStyle!.ActiveStyleId);
+
+        OpenPhysical(ui);
+        ui.Handle(UiInput.Down);
+        ui.Handle(UiInput.Right);
+        ui.Handle(UiInput.Right);
+        Equal(PrototypeCombatStyles.NorthGod.Id,
+            ui.Session.View.PhysicalStyle!.ActiveStyleId);
+        var atNorth = ui.Session.Events.Count(e => e.Kind == "StyleChanged");
+        ui.Handle(UiInput.Right);
+        Equal(atNorth, ui.Session.Events.Count(e => e.Kind == "StyleChanged"));
+        Equal(1, ui.PhysicalActionIndex);
+        ui.Handle(UiInput.Left);
+        ui.Handle(UiInput.Left);
+        var atSword = ui.Session.Events.Count(e => e.Kind == "StyleChanged");
+        ui.Handle(UiInput.Left);
+        Equal(atSword, ui.Session.Events.Count(e => e.Kind == "StyleChanged"));
+        Equal(1, ui.PhysicalActionIndex);
+    }),
+    ("Technique and BASIC routes present stable readable action and miss messages", () =>
+    {
+        var straight = PrototypeCombatStyles.SwordGod.Techniques[0];
+        var hit = new BattleSession(FindTechniqueSeed(straight, hit: true));
+        Check(hit.SubmitTechnique(straight.Id, 1), "Straight Slash submitted");
+        Check(hit.LastMessages.Contains("Adventurer uses Straight Slash on Goblin!"),
+            "Technique action message");
+        Check(hit.Events.Any(e => e.Kind == "ActionStarted" && e.Source == 0 &&
+            e.Detail == straight.Id), "Technique stable event identity");
+
+        var heavy = PrototypeCombatStyles.SwordGod.Techniques[1];
+        var miss = new BattleSession(FindTechniqueSeed(heavy, hit: false));
+        Check(miss.SubmitTechnique(heavy.Id, 1), "Heavy Slash submitted");
+        Check(miss.LastMessages.Contains("Adventurer misses Goblin with Heavy Slash."),
+            "Technique miss message");
+
+        var basic = new BattleSession();
+        Check(basic.SubmitBasicAttack(1), "BASIC submitted");
+        Check(basic.LastMessages.Contains("Adventurer attacks Goblin!"),
+            "existing BASIC message");
+        Equal(Scenario.Strike.Id, basic.Events.First(e =>
+            e.Kind == "ActionStarted" && e.Source == 0).Detail);
+    }),
     ("Attack selects Wolf independently, uses Strike, then enemies act", () =>
     {
         var ui = Started();
-        ui.Handle(UiInput.Confirm);
-        Equal(ScreenMode.Targets, ui.Mode);
+        OpenBasicTarget(ui);
         ui.Handle(UiInput.Right);
         ui.Handle(UiInput.Confirm);
         Equal(ScreenMode.Messages, ui.Mode);
@@ -323,9 +428,9 @@ var tests = new (string Name, Action Run)[]
         var browsed = Started();
         Choose(browsed, "MAGIC"); Choose(browsed, "CHANTLESS"); Choose(browsed, "ELEMENTAL MAGIC"); Choose(browsed, "Water");
         browsed.Handle(UiInput.Confirm); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back); browsed.Handle(UiInput.Back);
-        Choose(browsed, "ATTACK"); browsed.Handle(UiInput.Confirm);
+        OpenBasicTarget(browsed); browsed.Handle(UiInput.Confirm);
         var untouched = Started();
-        Choose(untouched, "ATTACK"); untouched.Handle(UiInput.Confirm);
+        OpenBasicTarget(untouched); untouched.Handle(UiInput.Confirm);
         Equal(untouched.Session.MachineText, browsed.Session.MachineText);
     }),
     ("Debug log navigation is read-only and returns to its prior menu", () =>
@@ -412,8 +517,8 @@ var tests = new (string Name, Action Run)[]
         Equip(ui, EquipmentSlot.Body, PrototypeEquipment.LeatherArmor);
         Equal(12, ui.Preparation.EffectiveStats.Defense);
         StartBattle(ui);
-        Equal(15, ui.Session.View.Hero.EffectiveStats.Strength);
-        Equal(12, ui.Session.View.Hero.EffectiveStats.Defense);
+        Equal(18, ui.Session.View.Hero.EffectiveStats.Strength);
+        Equal(10, ui.Session.View.Hero.EffectiveStats.Defense);
         Check(ui.Preparation.InBattle, "preparation locked at encounter start");
         var snapshot = ui.Session.View.Hero;
         var log = ui.Session.MachineText;
@@ -443,7 +548,7 @@ var tests = new (string Name, Action Run)[]
         Check(geared.Session.Submit(MenuAction.Attack, 2), "geared attack accepted");
         var bareHit = bare.Session.Events.Single(e => e.Kind == "Damaged" && e.Source == 0).Amount;
         var gearedHit = geared.Session.Events.Single(e => e.Kind == "Damaged" && e.Source == 0).Amount;
-        Equal(3, gearedHit - bareHit);
+        Equal(4, gearedHit - bareHit);
         Check(geared.Session.View.Hero.Hp > bare.Session.View.Hero.Hp, "armor reduces enemy response damage");
         Equal(bare.Preparation.BaseStats, geared.Preparation.BaseStats);
     }),
@@ -477,15 +582,18 @@ var tests = new (string Name, Action Run)[]
     {
         var ui = Started();
         var log = ui.Session.MachineText;
-        Choose(ui, "ATTACK");
+        OpenBasicTarget(ui);
         ui.Handle(UiInput.Left); ui.Handle(UiInput.Down); ui.Handle(UiInput.Up);
         Equal(0, ui.TargetIndex);
         ui.Handle(UiInput.Right); Equal(1, ui.TargetIndex);
         ui.Handle(UiInput.Right); Equal(2, ui.TargetIndex);
         ui.Handle(UiInput.Right); Equal(2, ui.TargetIndex);
         ui.Handle(UiInput.Confirm);
-        Equal(ScreenMode.Menu, ui.Mode);
+        Equal(ScreenMode.PhysicalActions, ui.Mode);
+        Equal(2, ui.PhysicalActionIndex);
         Equal(log, ui.Session.MachineText);
+        ui.Handle(UiInput.Back);
+        Equal(ScreenMode.Menu, ui.Mode);
     })
 };
 tests = tests.Concat(FieldLoopTests.All).Concat(FieldMenuTests.All).ToArray();
@@ -515,6 +623,30 @@ static HarnessController Started()
     var ui = new HarnessController();
     StartBattle(ui);
     return ui;
+}
+static void OpenPhysical(HarnessController ui)
+{
+    Choose(ui, "ATTACK");
+    Equal(ScreenMode.PhysicalActions, ui.Mode);
+}
+static void OpenBasicTarget(HarnessController ui)
+{
+    OpenPhysical(ui);
+    ui.Handle(UiInput.Down);
+    ui.Handle(UiInput.Down);
+    ui.Handle(UiInput.Confirm);
+    Equal(ScreenMode.Targets, ui.Mode);
+}
+static ulong FindTechniqueSeed(PhysicalTechniqueDefinition technique, bool hit)
+{
+    var chance = CombatStyleRules.HitChanceMillionths(technique, shifted: false);
+    for (ulong seed = 0; seed < 100_000; seed++)
+    {
+        var roll = new DeterministicRng(
+            seed, "battle.technique-hit").NextInclusive(999_999);
+        if ((roll < chance) == hit) return seed;
+    }
+    throw new Exception("No deterministic Technique seed found.");
 }
 static BattleSession MagicSession(ChantlessMagicConfiguration configuration)
 {
