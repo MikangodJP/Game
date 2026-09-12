@@ -1,6 +1,7 @@
 using Godot;
 using Phase1A.Magic;
 using Phase1A.Rules;
+using Phase1A.Styles;
 using Phase1A.Visual.Presentation;
 
 namespace Phase1A.Visual;
@@ -53,8 +54,8 @@ public partial class BattleScreen
             var initialStats = ui.Session.View.Hero.EffectiveStats;
             Check(initialStats.MaxHp == 80 && ui.Session.View.Hero.MaxHp == initialStats.MaxHp, "displayed maximum HP comes from effective stats");
             Check(initialStats.MaxMp == 12 && ui.Session.View.Hero.MaxMp == initialStats.MaxMp, "displayed maximum MP comes from effective stats");
-            Check(initialStats.Strength == 15, "battle snapshot includes equipped STR15");
-            Check(initialStats.Defense == 12, "battle snapshot includes equipped DEF12");
+            Check(initialStats.Strength == 18, "Sword stance projects equipped strength to STR18");
+            Check(initialStats.Defense == 10, "Sword stance projects equipped defense to DEF10");
             Check(initialStats.Magic == 6, "hero MAG read model is 6");
             Check(initialStats.Resistance == 6, "hero RES read model is 6");
             Check(initialStats.Agility == 10, "hero AGI read model is 10");
@@ -145,21 +146,62 @@ public partial class BattleScreen
             await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape); await Press(Key.Escape);
             Check(ui.Session.MachineText == untouched, "all WIP navigation leaves simulation untouched");
             await Choose("ATTACK");
+            Check(ui.Mode == ScreenMode.PhysicalActions && ui.Breadcrumb == "ATTACK > SWORD GOD",
+                "ATTACK opens the unshifted Sword God physical-action screen");
+            Check(ui.PhysicalActionLabels.SequenceEqual(
+                new[] { "STRAIGHT SLASH", "HEAVY SLASH", "BASIC ATTACK" }),
+                "Sword God exposes its two Techniques above BASIC ATTACK");
+            await Press(Key.D);
+            Check(ui.Mode == ScreenMode.PhysicalActions && ui.Breadcrumb == "ATTACK > WATER GOD > SHIFT",
+                "D immediately switches to Water God and exposes Style Shift");
+            Check(ui.PhysicalActionLabels.SequenceEqual(
+                new[] { "STEADY CUT", "PRECISE CUT", "BASIC ATTACK" }),
+                "Water God replaces the live Technique rows and preserves BASIC ATTACK");
+            await Frames();
+            Check(lastDrawnCommandColumns == 1, "Physical Style renders one column");
+            Check(lastDrawnCommandLabels.SequenceEqual(
+                new[] { "STEADY CUT", "PRECISE CUT", "BASIC ATTACK" }),
+                "renderer draws the live Water action list");
+            await Capture(outputDirectory, "04-physical-water-shift");
+            await Press(Key.A);
+            Check(ui.Breadcrumb == "ATTACK > SWORD GOD" && !ui.PhysicalStyle.Shifted,
+                "A returns to the turn-start Sword Style and removes Shift");
+            await Press(Key.Down); await Press(Key.Down);
+            Check(ui.PhysicalActionIndex == 2, "Down selects BASIC ATTACK beneath both Techniques");
+            await Press(Key.Enter);
+            Check(ui.Mode == ScreenMode.Targets && ui.Breadcrumb == "BASIC ATTACK > CHOOSE TARGET",
+                "BASIC ATTACK enters the shared target flow");
             await Press(Key.D);
             Check(ui.TargetIndex == 1, "WASD selects Wolf independently");
             await Capture(outputDirectory, "04-target-wolf");
             await Press(Key.Escape);
-            Check(ui.Mode == ScreenMode.Menu && ui.Session.MachineText == untouched, "target Back cancels without a turn");
-            await Choose("ATTACK"); await Press(Key.Right); await Press(Key.Space);
-            Check(ui.Session.View.Enemies[0].Hp == 38 && ui.Session.View.Enemies[1].Hp < 46, "Attack damages selected Wolf via core");
+            Check(ui.Mode == ScreenMode.PhysicalActions && ui.PhysicalActionIndex == 2,
+                "target Back returns to the selected BASIC ATTACK row");
+            var afterStyleNavigation = ui.Session.MachineText;
+            await Press(Key.Escape);
+            Check(ui.Mode == ScreenMode.Menu && ui.Session.MachineText == afterStyleNavigation,
+                "a second Back returns to root without consuming a turn");
+            await Choose("ATTACK"); await Press(Key.Down); await Press(Key.Down); await Press(Key.Enter);
+            await Press(Key.Right); await Press(Key.Space);
+            Check(ui.Session.View.Enemies[0].Hp == 38 && ui.Session.View.Enemies[1].Hp < 46, "BASIC ATTACK damages selected Wolf via core");
             Check(ui.Session.View.Hero.Hp < 80 && ui.Session.View.Hero.Mp == 12, "enemy responses update visible HP without spell costs");
             Check(ui.Session.View.Hero.EffectiveStats == initialStats, "combat keeps equipped stat snapshot intact");
             var bareBattle = new BattleSession();
             bareBattle.Submit(MenuAction.Attack, 2);
-            Check(ui.Session.View.Enemies[1].Hp == bareBattle.View.Enemies[1].Hp - 3, "sword increases real first attack damage by3 with identical RNG");
+            Check(ui.Session.View.Enemies[1].Hp == bareBattle.View.Enemies[1].Hp - 4, "sword increases real first attack damage by4 with identical RNG");
             Check(ui.Session.View.Hero.Hp == bareBattle.View.Hero.Hp + 4, "armor prevents2 damage from each of two enemy responses");
             Check(ui.BattleLines.Any(s => s.Contains("attacks Wolf")), "readable events displayed from machine stream");
             await Capture(outputDirectory, "05-attack");
+            await FinishMessages();
+            var techniqueFirstEvent = ui.Session.Events.Length;
+            await Choose("ATTACK"); await Press(Key.Enter); await Press(Key.Enter);
+            var techniqueEvents = ui.Session.Events.Skip(techniqueFirstEvent).ToArray();
+            Check(techniqueEvents.Any(e => e.Kind == "ActionStarted" &&
+                    e.Detail == PrototypeCombatStyles.SwordGod.Techniques[0].Id),
+                "Straight Slash submits its stable Technique identity");
+            Check(ui.Session.LastMessages.Contains("Adventurer uses Straight Slash on Goblin!"),
+                "executed Technique has a readable stable-name message");
+            await Capture(outputDirectory, "05-technique");
             await FinishMessages(); await Choose("DEFEND");
             Check(ui.Session.View.Hero.Guarding && ui.Session.Events.Count(e => e.Kind == "GuardBlocked") == 2, "Defend covers both enemy responses");
             await Capture(outputDirectory, "06-defend");
@@ -211,7 +253,8 @@ public partial class BattleScreen
             var sawDefeatedGoblin = false;
             for (var turn = 0; turn < 20 && !ui.Session.View.Finished; turn++)
             {
-                await Choose("ATTACK"); await Press(Key.Enter); await FinishMessages();
+                await Choose("ATTACK"); await Press(Key.Down); await Press(Key.Down);
+                await Press(Key.Enter); await Press(Key.Enter); await FinishMessages();
                 if (!sawDefeatedGoblin && ui.Session.View.Enemies[0].Hp == 0)
                 {
                     sawDefeatedGoblin = true;

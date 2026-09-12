@@ -2,6 +2,7 @@ using Godot;
 using Phase1A.Encounter;
 using Phase1A.Magic;
 using Phase1A.Rules;
+using Phase1A.Styles;
 using Phase1A.Visual.Presentation;
 
 namespace Phase1A.Visual;
@@ -56,8 +57,12 @@ public partial class BattleScreen
 
             await EnterFieldEncounter();
             Check(ReferenceEquals(initialPlayer, ui.Preparation), "field encounter uses the authoritative player preparation");
-            Check(ui.Session.View.Hero.Hp == initialPlayer.Hp && ui.Session.View.Hero.EffectiveStats == initialPlayer.EffectiveStats,
-                "first battle starts from current persistent HP and effective stats");
+            var initialBattleStats = CombatStyleRules.ApplyStance(
+                initialPlayer.EffectiveStats, PrototypeCombatStyles.SwordGod.Stance, shifted: false);
+            Check(ui.Session.View.Hero.Hp == initialPlayer.Hp &&
+                    ui.Session.View.Hero.EffectiveStats == initialBattleStats &&
+                    initialBattleStats.Strength == 14 && initialBattleStats.Defense == 6,
+                "first battle starts from current HP and the bare STR14 DEF6 Sword stance");
             await Choose("RUN"); await FinishMessages();
             Check(ui.Mode == ScreenMode.Ended && ui.Session.View.Outcome == Outcome.Fled, "existing Run resolves the field encounter as Fled");
             await Press(Key.R);
@@ -106,8 +111,12 @@ public partial class BattleScreen
             await EnterFieldEncounter();
             var encounterPosition = field.PlayerPosition;
             var equippedStats = player.EffectiveStats;
-            Check(ui.Session.View.Hero.Hp == player.Hp && ui.Session.View.Hero.EffectiveStats == equippedStats,
-                "contact battle preserves current HP and the equipped STR15 DEF12 snapshot");
+            var equippedBattleStats = CombatStyleRules.ApplyStance(
+                equippedStats, PrototypeCombatStyles.SwordGod.Stance, shifted: false);
+            Check(ui.Session.View.Hero.Hp == player.Hp &&
+                    ui.Session.View.Hero.EffectiveStats == equippedBattleStats &&
+                    equippedBattleStats.Strength == 18 && equippedBattleStats.Defense == 10,
+                "contact battle preserves current HP and projects equipped stats to STR18 DEF10");
             Check(!player.TryEquip(EquipmentSlot.Weapon, null) && !player.TryEquip(EquipmentSlot.Body, null), "equipment changes are rejected while battle is active");
             Check(ui.Menu.Columns == 3, "field battle retains the existing three-column command grid");
             await Press(Key.D); Check(ui.Menu.SelectedIndex == 1, "battle D navigates horizontally to Defend");
@@ -122,6 +131,25 @@ public partial class BattleScreen
             await Press(Key.Enter); await Press(Key.Escape); await Press(Key.Escape); await Press(Key.Escape);
             Check(ui.Session.MachineText == beforeWip, "WIP navigation consumes no battle action");
             await Capture(outputDirectory, "field-05-battle");
+
+            await Choose("ATTACK");
+            Check(ui.Mode == ScreenMode.PhysicalActions && ui.Breadcrumb == "ATTACK > SWORD GOD",
+                "field ATTACK opens the current Sword Style");
+            await Press(Key.D);
+            Check(ui.Breadcrumb == "ATTACK > WATER GOD > SHIFT" &&
+                    ui.PhysicalActionLabels.SequenceEqual(
+                        new[] { "STEADY CUT", "PRECISE CUT", "BASIC ATTACK" }),
+                "field battle switches immediately to the shifted Water action list");
+            await Press(Key.Escape);
+            Check(ui.Mode == ScreenMode.Menu, "Back leaves the field battle Physical Style screen");
+            await Choose("ATTACK");
+            Check(ui.Breadcrumb == "ATTACK > WATER GOD > SHIFT",
+                "backing out preserves the active Water Style and Shift state");
+            await Press(Key.A);
+            Check(ui.Breadcrumb == "ATTACK > SWORD GOD" && !ui.PhysicalStyle.Shifted,
+                "returning to turn-start Sword removes Shift before acting");
+            await Press(Key.Escape);
+            Check(ui.Mode == ScreenMode.Menu, "field battle returns to root after Style cancellation checks");
 
             var fireballFirstEvent = ui.Session.Events.Length;
             await Choose("MAGIC"); await Choose("CHANTLESS"); await Choose("ELEMENTAL MAGIC"); await Choose("Fire");
@@ -150,7 +178,8 @@ public partial class BattleScreen
             await FinishMessages();
             for (var turn = 0; turn < 20 && !ui.Session.View.Finished; turn++)
             {
-                await Choose("ATTACK"); await Press(Key.Enter); await FinishMessages();
+                await Choose("ATTACK"); await Press(Key.Down); await Press(Key.Down);
+                await Press(Key.Enter); await Press(Key.Enter); await FinishMessages();
             }
             Check(ui.Mode == ScreenMode.Ended && ui.Session.View.Outcome == Outcome.Victory, "equipped ordinary attacks win the existing battle");
             var finalHp = ui.Session.View.Hero.Hp;

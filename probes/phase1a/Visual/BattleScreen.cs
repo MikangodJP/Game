@@ -22,6 +22,8 @@ public partial class BattleScreen : Node2D
     private static readonly Color MagicInk = new("000000"), MagicPaper = new("ffffff");
     private static readonly Rect2I MagicAdjustmentRect = new(40, 28, 240, 180);
     private Rect2I? lastMagicAdjustmentBounds;
+    private IReadOnlyList<string> lastDrawnCommandLabels = [];
+    private int lastDrawnCommandColumns;
     internal Rect2I? LastMagicAdjustmentBounds => lastMagicAdjustmentBounds;
     private string debugNotice = "F3: SAVE ORIGINAL EVENTS";
 
@@ -234,12 +236,20 @@ public partial class BattleScreen : Node2D
             selected = ui.TargetIndex;
             columns = 3;
         }
+        else if (ui.Mode == ScreenMode.PhysicalActions)
+        {
+            entries = ui.PhysicalActionLabels;
+            selected = ui.PhysicalActionIndex;
+            columns = 1;
+        }
         else
         {
             entries = ui.Menu.CurrentEntries.Select(e => e.Label).ToArray();
             selected = ui.Menu.SelectedIndex;
             columns = ui.Menu.Columns;
         }
+        lastDrawnCommandLabels = entries.ToArray();
+        lastDrawnCommandColumns = columns;
         DrawCommandGrid(entries, selected, columns);
     }
 
