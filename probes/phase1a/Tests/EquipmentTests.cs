@@ -91,15 +91,16 @@ internal static class EquipmentTests
             Check(character.TryEquip(EquipmentSlot.Accessory, PrototypeEquipment.CopperCharm), "charm");
             var template = Scenario.Setup(Scenario.GoldenSeed);
             var battle = character.BeginBattle(template);
-            Equal(Base with { MaxHp = 85, Strength = 15 }, battle.Read(0).EffectiveStats);
+            Equal(Base with { MaxHp = 85, Strength = 18, Defense = 6 },
+                battle.Read(0).EffectiveStats);
             Equal(40, battle.Read(0).Hp); Equal(5, battle.Read(0).Mp);
             Equal(Base, template.Actors[0].InitialStats);
             var separateCopy = character.Loadout.With(EquipmentSlot.Weapon, null);
             Equal(0, separateCopy.Bonuses.Strength);
             var otherCharacter = new CharacterPreparation(Base);
             Check(otherCharacter.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "other preparation can change");
-            Equal(15, battle.Read(0).Strength);
-            Equal(8, battle.Read(0).Defense);
+            Equal(18, battle.Read(0).Strength);
+            Equal(6, battle.Read(0).Defense);
         }),
         ("Active battles reject equip unequip and duplicate starts without an unlock flag", () =>
         {
@@ -110,17 +111,19 @@ internal static class EquipmentTests
             Check(!character.TryEquip(EquipmentSlot.Weapon, null), "active unequip rejected");
             Check(!character.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "active equip rejected");
             Throws(() => character.BeginBattle(Scenario.Setup(8)));
-            Equal(15, battle.Read(0).Strength);
-            Check(Enum.GetNames<CommandKind>().SequenceEqual(new[] { "Ability", "Defend", "Run" }), "no equipment battle command");
+            Equal(18, battle.Read(0).Strength);
+            Check(Enum.GetNames<CommandKind>().SequenceEqual(
+                new[] { "Ability", "Defend", "Run", "Technique" }),
+                "Technique is a Battle command, not equipment");
             Check(battle.TakeTurn(new(0, null, -1, CommandKind.Run)), "escape");
             Check(!character.InBattle, "terminal result ends active lock");
             Check(character.TryEquip(EquipmentSlot.Weapon, null), "out-of-battle changes work again");
-            Equal(15, battle.Read(0).Strength); // Even a sealed encounter retains its own snapshot.
+            Equal(18, battle.Read(0).Strength); // Even a sealed encounter retains its own snapshot.
         }),
-        ("Wooden Sword adds three physical damage at identical seeds before HP caps", () =>
+        ("Wooden Sword adds four post-stance physical damage at identical seeds before HP caps", () =>
         {
             for (ulong seed = 0; seed < 12; seed++)
-                Equal(3, Damage(seed, sword: true, armor: false, incoming: false) - Damage(seed, sword: false, armor: false, incoming: false));
+                Equal(4, Damage(seed, sword: true, armor: false, incoming: false) - Damage(seed, sword: false, armor: false, incoming: false));
         }),
         ("Leather Armor removes two incoming physical damage at identical seeds", () =>
         {
@@ -134,7 +137,7 @@ internal static class EquipmentTests
             Check(character.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "armor");
             var battle = character.BeginBattle(Scenario.Setup(7));
             battle.ApplyStatus(0, Scenario.Weakened, 4, 1);
-            Equal(11, battle.Read(0).Strength); Equal(8, battle.Read(0).Defense);
+            Equal(13, battle.Read(0).Strength); Equal(6, battle.Read(0).Defense);
             Equal(15, character.EffectiveStats.Strength); Equal(12, character.EffectiveStats.Defense);
             Equal(Base, character.BaseStats);
         })

@@ -1,16 +1,28 @@
 using System.Collections.Immutable;
 using Phase1A.Rules;
+using Phase1A.Styles;
 
 namespace Phase1A.Encounter;
 
 public sealed record ActorSeed(
     string DefinitionId, string? InstanceId, Side Side,
-    CharacterStats InitialStats, int? Hp = null, int? Mp = null);
+    CharacterStats InitialStats, int? Hp = null, int? Mp = null,
+    CombatStyleProfile? StyleProfile = null);
 public sealed record EncounterSetup(ImmutableArray<ActorSeed> Actors, ulong Seed);
-public enum CommandKind { Ability, Defend, Run }
-public sealed record Command(int ActorId, Ability? Ability, int TargetId, CommandKind Kind = CommandKind.Ability);
+public enum CommandKind { Ability, Defend, Run, Technique }
+public sealed record Command(
+    int ActorId,
+    Ability? Ability,
+    int TargetId,
+    CommandKind Kind = CommandKind.Ability,
+    string? TechniqueId = null);
 public enum Outcome { Victory, Defeat, Aborted, Fled }
 public sealed record StatusSnapshot(string Id, int FrozenAmount, int RemainingTurns, int SourceId);
+public sealed record CombatStyleSnapshot(
+    ImmutableArray<CombatStyleDefinition> KnownStyles,
+    CombatStyleDefinition ActiveStyle,
+    string TurnStartStyleId,
+    bool Shifted);
 public sealed record VitalsChanged(string InstanceId, int Hp, int Mp);
 public sealed record EncounterResult(
     Outcome Outcome, ulong Seed, string CodeVersion, string ContentVersion,
@@ -28,12 +40,15 @@ public sealed class BattleState : IEffectState
         public int Mp = seed.Mp ?? seed.InitialStats.MaxMp;
         public ActiveStatus? Status;
         public bool Guarding;
+        public string? ActiveStyleId = seed.StyleProfile?.PrimaryStyleId;
+        public string? TurnStartStyleId = seed.StyleProfile?.PrimaryStyleId;
     }
     private sealed record ActiveStatus(StatusDef Definition, int FrozenAmount, int RemainingTurns, int SourceId);
 
     private readonly List<Actor> _actors;
     private readonly List<BattleEvent> _events = [];
     private readonly DeterministicRng _rng;
+    private readonly DeterministicRng _techniqueHitRng;
     private readonly ulong _seed;
     private int _nextActor;
     private EncounterResult? _result;
@@ -54,6 +69,7 @@ public sealed class BattleState : IEffectState
         _seed = setup.Seed;
         _actors = setup.Actors.Select(seed => new Actor(seed)).ToList();
         _rng = new(_seed, "battle.effect");
+        _techniqueHitRng = new(_seed, "battle.technique-hit");
         Emit("BattleStarted", value: _actors.Count);
         for (var i = 0; i < _actors.Count; i++)
         {
@@ -70,8 +86,35 @@ public sealed class BattleState : IEffectState
     {
         var actor = _actors[actorId];
         var weakness = actor.Status?.FrozenAmount ?? 0;
+        var stats = StatResolver.Resolve(actor.Seed.InitialStats, weakness);
+        var style = ReadCombatStyle(actorId);
+        if (style is not null)
+            stats = CombatStyleRules.ApplyStance(
+                stats, style.ActiveStyle.Stance, style.Shifted);
         return new(actorId, actor.Seed.Side, actor.Hp, actor.Mp,
-            StatResolver.Resolve(actor.Seed.InitialStats, weakness), actor.Guarding);
+            stats, actor.Guarding);
+    }
+    public CombatStyleSnapshot? ReadCombatStyle(int actorId)
+    {
+        var actor = _actors[actorId];
+        var profile = actor.Seed.StyleProfile;
+        if (profile is null) return null;
+        var active = profile.FindStyle(actor.ActiveStyleId!) ??
+            throw new InvalidOperationException("Active Style is absent from its Battle profile.");
+        var turnStart = actor.TurnStartStyleId ??
+            throw new InvalidOperationException("Turn-start Style is absent from a styled actor.");
+        return new(profile.KnownStyles, active, turnStart, active.Id != turnStart);
+    }
+    public bool TryChangeStyle(int actorId, string styleId)
+    {
+        if (IsFinished || actorId != _nextActor ||
+            string.IsNullOrWhiteSpace(styleId)) return false;
+        var actor = _actors[actorId];
+        if (actor.Seed.StyleProfile?.FindStyle(styleId) is null) return false;
+        if (actor.ActiveStyleId == styleId) return true;
+        actor.ActiveStyleId = styleId;
+        Emit("StyleChanged", actorId, actorId, styleId);
+        return true;
     }
     public StatusSnapshot? ReadStatus(int actorId) => _actors[actorId].Status is { } status
         ? new(status.Definition.Id, status.FrozenAmount, status.RemainingTurns, status.SourceId) : null;
@@ -85,13 +128,29 @@ public sealed class BattleState : IEffectState
     public bool TakeTurn(Command command)
     {
         if (IsFinished) return false;
-        var detail = command.Ability?.Id ?? command.Kind.ToString();
-        var valid = command.ActorId == _nextActor && (command.Kind switch
+        var currentActor = command.ActorId == _nextActor;
+        PhysicalTechniqueDefinition? technique = null;
+        if (currentActor && command.Kind == CommandKind.Technique &&
+            !string.IsNullOrWhiteSpace(command.TechniqueId))
+        {
+            technique = ReadCombatStyle(command.ActorId)?.ActiveStyle.Techniques
+                .FirstOrDefault(candidate => candidate.Id == command.TechniqueId);
+        }
+        var resolvedAbility = technique?.BaseAction ?? command.Ability;
+        var detail = command.Kind == CommandKind.Technique
+            ? command.TechniqueId ?? command.Kind.ToString()
+            : command.Ability?.Id ?? command.Kind.ToString();
+        var valid = currentActor && (command.Kind switch
         {
             CommandKind.Ability => command.Ability is { } ability &&
+                command.TechniqueId is null &&
                 command.TargetId >= 0 && command.TargetId < _actors.Count &&
                 _actors[command.TargetId].Hp > 0 && _actors[command.ActorId].Mp >= ability.ManaCost,
-            CommandKind.Defend or CommandKind.Run => command.Ability is null,
+            CommandKind.Technique => command.Ability is null && technique is not null &&
+                LivingEnemies(command.ActorId).Contains(command.TargetId) &&
+                _actors[command.ActorId].Mp >= technique.BaseAction.ManaCost,
+            CommandKind.Defend or CommandKind.Run =>
+                command.Ability is null && command.TechniqueId is null,
             _ => false
         });
         if (!valid)
@@ -105,6 +164,7 @@ public sealed class BattleState : IEffectState
             actor.Guarding = false;
             Emit("GuardEnded", command.ActorId, command.ActorId);
         }
+        detail = technique?.Id ?? resolvedAbility?.Id ?? command.Kind.ToString();
         Emit("ActionStarted", command.ActorId, command.TargetId, detail);
         if (command.Kind == CommandKind.Run)
         {
@@ -119,17 +179,38 @@ public sealed class BattleState : IEffectState
         }
         else
         {
-            var ability = command.Ability!; // Validated before committing the action.
+            var ability = resolvedAbility!; // Validated before committing the action.
             if (ability.ManaCost > 0) ChangeMp(command.ActorId, -ability.ManaCost, command.ActorId);
-            EffectRunner.Apply(this, command.ActorId, command.TargetId, ability.Effects, _rng);
+            var style = ReadCombatStyle(command.ActorId);
+            var shifted = style?.Shifted == true;
+            var physicalDamageScale = technique is null
+                ? PhysicalActionMath.ScaleFromPercents(100, shifted)
+                : CombatStyleRules.TechniqueDamageScaleMillionths(technique, shifted);
+            if (technique is not null &&
+                _techniqueHitRng.NextInclusive(999_999) >=
+                    CombatStyleRules.HitChanceMillionths(technique, shifted))
+            {
+                Emit("Missed", command.ActorId, command.TargetId, technique.Id);
+            }
+            else
+            {
+                EffectRunner.Apply(this, command.ActorId, command.TargetId,
+                    ability.Effects, _rng, physicalDamageScale);
+            }
         }
         TickStatus(command.ActorId);
         Emit("TurnEnded", command.ActorId);
         if (!IsFinished)
-        {
-            do { _nextActor = (_nextActor + 1) % _actors.Count; } while (_actors[_nextActor].Hp == 0);
-        }
+            AdvanceTurn();
         return true;
+    }
+    private void AdvanceTurn()
+    {
+        do { _nextActor = (_nextActor + 1) % _actors.Count; }
+        while (_actors[_nextActor].Hp == 0);
+        var next = _actors[_nextActor];
+        if (next.ActiveStyleId is not null)
+            next.TurnStartStyleId = next.ActiveStyleId;
     }
     public void ChangeHp(int actorId, int delta, int sourceId, string cause)
     {

@@ -44,7 +44,11 @@ public readonly record struct OpContext(ActorSnapshot Caster, ActorSnapshot Targ
 
 public static class Op
 {
-    public static OpResult Execute(OpContext context, EffectNode node, int magnitude)
+    public static OpResult Execute(
+        OpContext context,
+        EffectNode node,
+        int magnitude,
+        int physicalDamageScaleMillionths = PhysicalActionMath.OneMillion)
     {
         var target = context.Target;
         int amount;
@@ -53,7 +57,11 @@ public static class Op
             case OpKind.Damage:
                 amount = node.DamageKind switch
                 {
-                    DamageKind.Physical => PhysicalDamage.Calculate(magnitude, context.Caster.EffectiveStats, target.EffectiveStats),
+                    DamageKind.Physical => PhysicalActionMath.ApplyDamageScale(
+                        PhysicalDamage.Calculate(magnitude,
+                            context.Caster.EffectiveStats,
+                            target.EffectiveStats),
+                        physicalDamageScaleMillionths),
                     DamageKind.Magical => MagicalDamage.Calculate(magnitude, context.Caster.EffectiveStats, target.EffectiveStats),
                     DamageKind.Prototype => Math.Max(0, magnitude - target.Defense),
                     _ => throw new InvalidOperationException("Unknown probe damage kind.")
@@ -95,7 +103,8 @@ public static class EffectRunner
 {
     public static ImmutableArray<NodeResult> Apply(
         IEffectState state, int casterId, int selectedId, ImmutableArray<EffectNode> nodes,
-        DeterministicRng rng)
+        DeterministicRng rng,
+        int physicalDamageScaleMillionths = PhysicalActionMath.OneMillion)
     {
         var caster = state.Read(casterId); // One capture for the entire action.
         var prior = ImmutableArray.CreateBuilder<NodeResult>();
@@ -126,7 +135,8 @@ public static class EffectRunner
                     if (formula.Variance > 0) value += rng.NextInclusive(formula.Variance);
                     if (!double.IsFinite(value) || value < 0) throw new InvalidOperationException("Invalid magnitude literal.");
                     var resolved = checked((int)Math.Round(value, MidpointRounding.AwayFromZero));
-                    result = Op.Execute(new(caster, target, state), node, resolved);
+                    result = Op.Execute(new(caster, target, state), node, resolved,
+                        physicalDamageScaleMillionths);
                 }
                 if (result.Status != OpStatus.Applied) state.Skipped(casterId, target.Id, node.Op, result.Status);
                 amount = checked(amount + result.Amount);

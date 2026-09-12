@@ -90,7 +90,15 @@ public sealed class CharacterPreparation
         ArgumentNullException.ThrowIfNull(template);
         if (template.Actors.IsDefault || actorId < 0 || actorId >= template.Actors.Length)
             throw new ArgumentOutOfRangeException(nameof(actorId));
-        var seed = template.Actors[actorId] with { InitialStats = EffectiveStats, Hp = Hp, Mp = Mp };
+        var styleProfile = new CombatStyleProfile(
+            [.. KnownCombatStyles], PrimaryCombatStyle.Id);
+        var seed = template.Actors[actorId] with
+        {
+            InitialStats = EffectiveStats,
+            Hp = Hp,
+            Mp = Mp,
+            StyleProfile = styleProfile
+        };
         var instanceId = seed.InstanceId ?? throw new InvalidOperationException("The persistent player requires an instance ID.");
         if (template.Actors.Count(actor => actor.InstanceId == instanceId) != 1)
             throw new InvalidOperationException("The persistent player's instance ID must be unique in the encounter.");

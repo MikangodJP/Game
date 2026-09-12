@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
 using Phase1A;
+using Phase1A.Encounter;
+using Phase1A.Magic;
 using Phase1A.Preparation;
 using Phase1A.Rules;
 using Phase1A.Styles;
@@ -144,8 +147,370 @@ internal static class CombatStyleTests
             Throws(() => new CombatStyleDefinition(
                 "fixture:invalid", "Invalid", "Invalid", "INVALID",
                 default, [sword.Techniques[0], sword.Techniques[0]]));
+        }),
+        ("Battle owns immediate free Style changes and preserves the turn-start identity", () =>
+        {
+            var battle = StyledBattle();
+            var initial = battle.ReadCombatStyle(0)!;
+            Check(initial.KnownStyles.Select(style => style.Id)
+                .SequenceEqual(PrototypeCombatStyles.All.Select(style => style.Id)),
+                "Battle snapshots all known Styles");
+            Equal(PrototypeCombatStyles.SwordGod.Id, initial.ActiveStyle.Id);
+            Equal(PrototypeCombatStyles.SwordGod.Id, initial.TurnStartStyleId);
+            Check(!initial.Shifted, "Primary Style starts established");
+            Equal(new CharacterStats(500, 20, 120, 80, 100, 100, 100),
+                battle.Read(0).EffectiveStats);
+
+            var beforeNoOp = battle.Events;
+            Check(battle.TryChangeStyle(0, PrototypeCombatStyles.SwordGod.Id),
+                "selecting the active Style succeeds");
+            Check(battle.Events.SequenceEqual(beforeNoOp),
+                "same-Style selection emits no duplicate event");
+
+            Check(battle.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "Water switch accepted");
+            var shifted = battle.ReadCombatStyle(0)!;
+            Equal(PrototypeCombatStyles.WaterGod.Id, shifted.ActiveStyle.Id);
+            Equal(PrototypeCombatStyles.SwordGod.Id, shifted.TurnStartStyleId);
+            Check(shifted.Shifted, "different Active and turn-start IDs shift");
+            Equal(new CharacterStats(500, 20, 85, 117, 100, 113, 100),
+                battle.Read(0).EffectiveStats);
+            var changed = battle.Events.Last();
+            Equal("StyleChanged", changed.Kind);
+            Equal(0, changed.Source);
+            Equal(0, changed.Target);
+            Equal(PrototypeCombatStyles.WaterGod.Id, changed.Detail);
+            Equal(0, battle.NextActorId);
+            Equal(0, battle.Events.Count(e => e.Kind == "ActionStarted"));
+
+            var beforeReject = battle.Events;
+            Check(!battle.TryChangeStyle(0, "fixture:unknown"),
+                "unknown Style rejected");
+            Check(battle.Events.SequenceEqual(beforeReject),
+                "unknown Style rejection is mutation-free");
+            Check(battle.TryChangeStyle(0, PrototypeCombatStyles.SwordGod.Id),
+                "return to turn-start accepted");
+            Check(!battle.ReadCombatStyle(0)!.Shifted,
+                "return to turn-start removes Shift");
+            Equal(2, battle.Events.Count(e => e.Kind == "StyleChanged"));
+
+            var finished = StyledBattle();
+            finished.Finish();
+            var sealedEvents = finished.Events;
+            Check(!finished.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "finished Battle rejects Style changes");
+            Check(finished.Events.SequenceEqual(sealedEvents),
+                "finished rejection emits no event");
+        }),
+        ("Shifted stance persists through enemy responses and establishes only on player return", () =>
+        {
+            var battle = StyledBattle(enemyCount: 2);
+            Check(battle.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "shift to Water");
+            Check(battle.TakeTurn(new(0, null, -1, CommandKind.Defend)),
+                "player commits Defend");
+            var offTurnEvents = battle.Events;
+            Check(!battle.TryChangeStyle(0, PrototypeCombatStyles.NorthGod.Id),
+                "off-turn Style change rejected");
+            Check(battle.Events.SequenceEqual(offTurnEvents),
+                "off-turn rejection is mutation-free");
+            Equal(PrototypeCombatStyles.SwordGod.Id,
+                battle.ReadCombatStyle(0)!.TurnStartStyleId);
+            Check(battle.ReadCombatStyle(0)!.Shifted,
+                "Shift remains during first enemy response");
+
+            Check(battle.TakeTurn(new(1, Scenario.Strike, 0)), "enemy one");
+            Check(battle.ReadCombatStyle(0)!.Shifted,
+                "Shift remains during second enemy response");
+            Check(battle.TakeTurn(new(2, Scenario.Strike, 0)), "enemy two");
+            Equal(0, battle.NextActorId);
+            var established = battle.ReadCombatStyle(0)!;
+            Check(!established.Shifted, "Style establishes when player turn returns");
+            Equal(PrototypeCombatStyles.WaterGod.Id, established.TurnStartStyleId);
+            Equal(new CharacterStats(500, 20, 85, 120, 100, 115, 100),
+                battle.Read(0).EffectiveStats);
+        }),
+        ("Preparation injects a fresh player Style profile without styling monsters", () =>
+        {
+            var setup = Scenario.Setup(7);
+            var player = new CharacterPreparation(setup.Actors[0].InitialStats);
+            var first = player.BeginBattle(setup);
+            Equal(PrototypeCombatStyles.SwordGod.Id,
+                first.ReadCombatStyle(0)!.ActiveStyle.Id);
+            Check(first.ReadCombatStyle(0)!.KnownStyles
+                .SequenceEqual(PrototypeCombatStyles.All), "all player Styles copied");
+            Equal<CombatStyleSnapshot?>(null, first.ReadCombatStyle(1));
+            Equal<CombatStyleSnapshot?>(null, first.ReadCombatStyle(2));
+            Equal(new CharacterStats(80, 12, 14, 6, 6, 6, 10),
+                first.Read(0).EffectiveStats);
+
+            Check(first.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "first Battle changes Active Style");
+            Check(first.TakeTurn(new(0, null, -1, CommandKind.Run)), "leave first Battle");
+            player.CompleteBattle();
+            var second = player.BeginBattle(Scenario.Setup(8));
+            var reset = second.ReadCombatStyle(0)!;
+            Equal(PrototypeCombatStyles.SwordGod.Id, reset.ActiveStyle.Id);
+            Equal(PrototypeCombatStyles.SwordGod.Id, reset.TurnStartStyleId);
+            Check(!reset.Shifted, "Active Style does not persist between Battles");
+        }),
+        ("Rejected Technique identities and targets preserve both Battle RNG streams", () =>
+        {
+            var technique = PrototypeCombatStyles.SwordGod.Techniques[0];
+            var seed = FindTechniqueSeed(technique, shifted: false, hit: true);
+            var rejected = StyledBattle(seed: seed, enemyCount: 2);
+            var control = StyledBattle(seed: seed, enemyCount: 2);
+            Kill(rejected, 1);
+            Kill(control, 1);
+
+            Check(!rejected.TakeTurn(new(0, null, 2, CommandKind.Technique,
+                    PrototypeCombatStyles.WaterGod.Techniques[0].Id)),
+                "foreign-Style Technique rejected");
+            Check(!rejected.TakeTurn(new(0, null, 0, CommandKind.Technique, technique.Id)),
+                "friendly Technique target rejected");
+            Check(!rejected.TakeTurn(new(0, null, 1, CommandKind.Technique, technique.Id)),
+                "dead Technique target rejected");
+            Check(!rejected.TakeTurn(new(0, null, 99, CommandKind.Technique, technique.Id)),
+                "missing Technique target rejected");
+            Equal(0, rejected.NextActorId);
+            Equal(4, rejected.Events.Count(e => e.Kind == "CommandRejected"));
+
+            Check(rejected.TakeTurn(new(0, null, 2, CommandKind.Technique, technique.Id)),
+                "valid Technique remains available");
+            Check(control.TakeTurn(new(0, null, 2, CommandKind.Technique, technique.Id)),
+                "control Technique accepted");
+            Equal(control.Read(2).Hp, rejected.Read(2).Hp);
+            Equal(control.Events.Any(e => e.Kind == "Missed"),
+                rejected.Events.Any(e => e.Kind == "Missed"));
+            Equal(control.Events.Single(e => e.Kind == "Damaged" && e.Target == 2).Amount,
+                rejected.Events.Single(e => e.Kind == "Damaged" && e.Target == 2).Amount);
+        }),
+        ("Technique hit and miss commit the exact event order without sharing effect RNG", () =>
+        {
+            var straight = PrototypeCombatStyles.SwordGod.Techniques[0];
+            var hit = StyledBattle(seed: FindTechniqueSeed(
+                straight, shifted: false, hit: true));
+            var hitStart = hit.Events.Length;
+            Check(hit.TakeTurn(new(0, null, 1, CommandKind.Technique, straight.Id)),
+                "Straight Slash hit accepted");
+            var hitEvents = hit.Events.Skip(hitStart).ToArray();
+            Check(hitEvents.Select(e => e.Kind).SequenceEqual(
+                    new[] { "ActionStarted", "Damaged", "TurnEnded" }),
+                "hit event order");
+            Equal(straight.Id, hitEvents[0].Detail);
+
+            var heavy = PrototypeCombatStyles.SwordGod.Techniques[1];
+            var missSeed = FindMissSeedWithDistinctEffectRolls(heavy);
+            var miss = StyledBattle(missSeed.Seed,
+                new CharacterStats(500, 20, 0, 0, 0, 0, 0));
+            miss.ApplyStatus(0, Scenario.Weakened, 3, 1);
+            var enemyHp = miss.Read(1).Hp;
+            var missStart = miss.Events.Length;
+            Check(miss.TakeTurn(new(0, null, 1, CommandKind.Technique, heavy.Id)),
+                "Heavy Slash miss commits");
+            var missEvents = miss.Events.Skip(missStart).ToArray();
+            Check(missEvents.Select(e => e.Kind).SequenceEqual(
+                    new[] { "ActionStarted", "Missed", "StatusTick", "TurnEnded" }),
+                "miss event order");
+            Equal(heavy.Id, missEvents[0].Detail);
+            Equal(heavy.Id, missEvents[1].Detail);
+            Equal(enemyHp, miss.Read(1).Hp);
+            Equal(1, miss.ReadStatus(0)!.RemainingTurns);
+            Equal(1, miss.NextActorId);
+
+            Check(miss.TakeTurn(new(1, Scenario.Strike, 0)), "enemy response");
+            Equal(2 + missSeed.FirstEffectRoll,
+                miss.Events.Last(e => e.Kind == "Damaged").Amount);
+        }),
+        ("Techniques reuse BASIC variance and combine direct physical multipliers once", () =>
+        {
+            var adaptive = PrototypeCombatStyles.NorthGod.Techniques[0];
+            var sameSeed = FindTechniqueAndEffectSeed(
+                adaptive, shifted: false, effectRoll: 2);
+            var technique = StyledBattle(sameSeed,
+                new CharacterStats(500, 20, 0, 0, 0, 0, 0),
+                primary: PrototypeCombatStyles.NorthGod);
+            var basic = StyledBattle(sameSeed,
+                new CharacterStats(500, 20, 0, 0, 0, 0, 0),
+                primary: PrototypeCombatStyles.NorthGod);
+            Check(technique.TakeTurn(new(0, null, 1,
+                CommandKind.Technique, adaptive.Id)), "Adaptive Cut");
+            Check(basic.TakeTurn(new(0, Scenario.Strike, 1)), "BASIC");
+            Equal(basic.Events.Single(e => e.Kind == "Damaged").Amount,
+                technique.Events.Single(e => e.Kind == "Damaged").Amount);
+
+            var heavy = PrototypeCombatStyles.SwordGod.Techniques[1];
+            var combinedSeed = FindTechniqueAndEffectSeed(
+                heavy, shifted: true, effectRoll: 0);
+            var shifted = StyledBattle(combinedSeed,
+                new CharacterStats(500, 20, 0, 0, 0, 0, 0),
+                primary: PrototypeCombatStyles.WaterGod);
+            Check(shifted.TryChangeStyle(0, PrototypeCombatStyles.SwordGod.Id),
+                "shift from Water to Sword");
+            Check(shifted.TakeTurn(new(0, null, 1,
+                CommandKind.Technique, heavy.Id)), "shifted Heavy Slash");
+            Equal(2, shifted.Events.Single(e => e.Kind == "Damaged").Amount);
+        }),
+        ("BASIC stays guaranteed but receives shifted physical damage without a hit draw", () =>
+        {
+            var heavy = PrototypeCombatStyles.SwordGod.Techniques[1];
+            var missThenHit = FindTechniqueTransitionSeed(heavy);
+            var afterBasic = StyledBattle(missThenHit);
+            var afterDefend = StyledBattle(missThenHit);
+            Check(afterBasic.TakeTurn(new(0, Scenario.Strike, 1)), "BASIC accepted");
+            Check(!afterBasic.Events.Any(e => e.Kind == "Missed"),
+                "BASIC has no miss seam");
+            Check(afterDefend.TakeTurn(new(0, null, -1, CommandKind.Defend)),
+                "control Defend");
+            Check(afterBasic.TakeTurn(new(1, Scenario.Strike, 0)), "BASIC enemy response");
+            Check(afterDefend.TakeTurn(new(1, Scenario.Strike, 0)), "control enemy response");
+            Check(afterBasic.TakeTurn(new(0, null, 1, CommandKind.Technique, heavy.Id)),
+                "Technique after BASIC");
+            Check(afterDefend.TakeTurn(new(0, null, 1, CommandKind.Technique, heavy.Id)),
+                "Technique after Defend");
+            Check(afterBasic.Events.Any(e => e.Kind == "Missed" && e.Detail == heavy.Id),
+                "first Technique roll is still the seeded miss");
+            Equal(afterDefend.Events.Count(e => e.Kind == "Missed"),
+                afterBasic.Events.Count(e => e.Kind == "Missed"));
+
+            var shifted = StyledBattle(FindEffectVarianceSeed(2),
+                new CharacterStats(500, 20, 0, 0, 0, 0, 999));
+            Check(shifted.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "shift BASIC");
+            Check(shifted.TakeTurn(new(0, Scenario.Strike, 1)),
+                "shifted BASIC accepted");
+            Equal(3, shifted.Events.Single(e => e.Kind == "Damaged").Amount);
+        }),
+        ("Shift scaling ignores magical Prototype and Agility inputs", () =>
+        {
+            var establishedMagic = StyledBattle();
+            var shiftedMagic = StyledBattle();
+            Check(shiftedMagic.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "shift for magical comparison");
+            var fireball = FireballMagic.CreateAbility(
+                new(PrototypeMagic.Fireball, 4, 4));
+            Check(establishedMagic.TakeTurn(new(0, fireball, 1)), "established Fireball");
+            Check(shiftedMagic.TakeTurn(new(0, fireball, 1)), "shifted Fireball");
+            Equal(establishedMagic.Events.Single(e => e.Kind == "Damaged").Amount,
+                shiftedMagic.Events.Single(e => e.Kind == "Damaged").Amount);
+
+            var legacy = new Ability("fixture:prototype", 0,
+                [new(OpKind.Damage, new(TargetScope.Selected), new(Base: 10))]);
+            var establishedLegacy = StyledBattle();
+            var shiftedLegacy = StyledBattle();
+            Check(shiftedLegacy.TryChangeStyle(0, PrototypeCombatStyles.WaterGod.Id),
+                "shift for Prototype comparison");
+            Check(establishedLegacy.TakeTurn(new(0, legacy, 1)), "established Prototype");
+            Check(shiftedLegacy.TakeTurn(new(0, legacy, 1)), "shifted Prototype");
+            Equal(10, establishedLegacy.Events.Single(e => e.Kind == "Damaged").Amount);
+            Equal(10, shiftedLegacy.Events.Single(e => e.Kind == "Damaged").Amount);
+
+            var straight = PrototypeCombatStyles.SwordGod.Techniques[0];
+            var seed = FindTechniqueSeed(straight, shifted: false, hit: true);
+            var slow = StyledBattle(seed,
+                new CharacterStats(500, 20, 10, 10, 10, 10, 0));
+            var fast = StyledBattle(seed,
+                new CharacterStats(500, 20, 10, 10, 10, 10, 999));
+            var slowStart = slow.Events.Length;
+            var fastStart = fast.Events.Length;
+            Check(slow.TakeTurn(new(0, null, 1, CommandKind.Technique, straight.Id)),
+                "slow Technique");
+            Check(fast.TakeTurn(new(0, null, 1, CommandKind.Technique, straight.Id)),
+                "fast Technique");
+            Check(slow.Events.Skip(slowStart).SequenceEqual(fast.Events.Skip(fastStart)),
+                "Agility cannot affect Technique resolution");
         })
     ];
+
+    private static BattleState StyledBattle(
+        ulong seed = 7,
+        CharacterStats? hero = null,
+        CombatStyleDefinition? primary = null,
+        int enemyCount = 1)
+    {
+        var profile = new CombatStyleProfile(
+            PrototypeCombatStyles.All,
+            (primary ?? PrototypeCombatStyles.SwordGod).Id);
+        var actors = new List<ActorSeed>
+        {
+            new("fixture:hero", "hero", Side.Adventurers,
+                hero ?? new CharacterStats(500, 20, 100, 100, 100, 100, 100),
+                StyleProfile: profile)
+        };
+        for (var i = 0; i < enemyCount; i++)
+            actors.Add(new($"fixture:enemy-{i}", null, Side.Monsters,
+                new CharacterStats(500, 0, 0, 0, 0, 0, 0)));
+        return new BattleState(new EncounterSetup([.. actors], seed));
+    }
+
+    private static ulong FindTechniqueSeed(
+        PhysicalTechniqueDefinition technique,
+        bool shifted,
+        bool hit)
+    {
+        var chance = CombatStyleRules.HitChanceMillionths(technique, shifted);
+        for (ulong seed = 0; seed < 100_000; seed++)
+        {
+            var roll = new DeterministicRng(
+                seed, "battle.technique-hit").NextInclusive(999_999);
+            if ((roll < chance) == hit) return seed;
+        }
+        throw new Exception("No deterministic Technique seed found.");
+    }
+
+    private static (ulong Seed, int FirstEffectRoll) FindMissSeedWithDistinctEffectRolls(
+        PhysicalTechniqueDefinition technique)
+    {
+        var chance = CombatStyleRules.HitChanceMillionths(technique, shifted: false);
+        for (ulong seed = 0; seed < 100_000; seed++)
+        {
+            if (new DeterministicRng(seed, "battle.technique-hit")
+                    .NextInclusive(999_999) < chance) continue;
+            var effect = new DeterministicRng(seed, "battle.effect");
+            var first = effect.NextInclusive(2);
+            if (first != effect.NextInclusive(2)) return (seed, first);
+        }
+        throw new Exception("No Technique miss seed with distinct effect rolls found.");
+    }
+
+    private static ulong FindTechniqueAndEffectSeed(
+        PhysicalTechniqueDefinition technique,
+        bool shifted,
+        int effectRoll)
+    {
+        var chance = CombatStyleRules.HitChanceMillionths(technique, shifted);
+        for (ulong seed = 0; seed < 100_000; seed++)
+            if (new DeterministicRng(seed, "battle.technique-hit")
+                    .NextInclusive(999_999) < chance &&
+                new DeterministicRng(seed, "battle.effect").NextInclusive(2) == effectRoll)
+                return seed;
+        throw new Exception("No matching Technique and effect seed found.");
+    }
+
+    private static ulong FindTechniqueTransitionSeed(
+        PhysicalTechniqueDefinition technique)
+    {
+        var chance = CombatStyleRules.HitChanceMillionths(technique, shifted: false);
+        for (ulong seed = 0; seed < 100_000; seed++)
+        {
+            var rng = new DeterministicRng(seed, "battle.technique-hit");
+            var firstHits = rng.NextInclusive(999_999) < chance;
+            var secondHits = rng.NextInclusive(999_999) < chance;
+            if (!firstHits && secondHits) return seed;
+        }
+        throw new Exception("No miss-then-hit Technique seed found.");
+    }
+
+    private static ulong FindEffectVarianceSeed(int expected)
+    {
+        for (ulong seed = 0; seed < 100_000; seed++)
+            if (new DeterministicRng(seed, "battle.effect").NextInclusive(2) == expected)
+                return seed;
+        throw new Exception("No deterministic effect seed found.");
+    }
+
+    private static void Kill(BattleState battle, int actorId) =>
+        battle.ChangeHp(actorId, -battle.Read(actorId).Hp, 0, "Damaged");
 
     private static void Check(bool condition, string message)
     {

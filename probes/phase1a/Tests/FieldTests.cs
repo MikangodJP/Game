@@ -53,7 +53,7 @@ internal static class FieldTests
             Check(player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "sword");
             Check(player.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "armor");
             var battle = game.BeginEncounter(Contact(game));
-            Equal(15, battle.Read(0).Strength); Equal(12, battle.Read(0).Defense);
+            Equal(18, battle.Read(0).Strength); Equal(10, battle.Read(0).Defense);
             Check(!player.TryEquip(EquipmentSlot.Weapon, null), "battle equipment locked");
             CompleteWithAttacks(battle);
             var hp = battle.Read(0).Hp;
