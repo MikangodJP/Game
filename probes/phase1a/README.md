@@ -147,6 +147,85 @@ screen. The battle party panel shows name, HP/MP and current status. Enemy
 profiles remain available in the presentation read model for debugging.
 See the [historical stat integration and golden revision](STAT_SYSTEM_REPORT.md).
 
+## Combat Styles V1 — physical Battle actions
+
+Every player Battle knows all three prototype Styles and starts fresh in the
+immutable Primary Style, Sword God. Active Style is Battle-local and does not
+persist into a later encounter.
+
+| Stable Style ID | Japanese / English name | Battle label | STR | DEF | RES |
+|---|---|---|---:|---:|---:|
+| `probe:style.sword-god` | 剣神流 / Sword God Style | `SWORD GOD` | +20% | -20% | — |
+| `probe:style.water-god` | 水神流 / Water God Style | `WATER GOD` | -15% | +20% | +15% |
+| `probe:style.north-god` | 北神流 / North God Style | `NORTH GOD` | +10% | -10% | +10% |
+
+The stance is applied after equipment resolution and the existing frozen
+Weakened subtraction. It modifies only Strength, Defense and Resistance with
+integer fixed-point arithmetic and nearest rounding, with midpoint values away
+from zero. MaxHP, MaxMP, Magic and Agility are unchanged.
+
+Each Style owns exactly two prototype Techniques:
+
+| Stable Technique ID | Display name | Damage | Accuracy |
+|---|---|---:|---:|
+| `probe:technique.sword-god.straight-slash` | `STRAIGHT SLASH` | ×1.10 | ×1.00 |
+| `probe:technique.sword-god.heavy-slash` | `HEAVY SLASH` | ×1.25 | ×0.85 |
+| `probe:technique.water-god.steady-cut` | `STEADY CUT` | ×0.90 | ×1.10 |
+| `probe:technique.water-god.precise-cut` | `PRECISE CUT` | ×1.00 | ×1.05 |
+| `probe:technique.north-god.adaptive-cut` | `ADAPTIVE CUT` | ×1.00 | ×1.10 |
+| `probe:technique.north-god.risky-cut` | `RISKY CUT` | ×1.15 | ×0.90 |
+
+All six definitions reference the same authoritative BASIC ATTACK / `Strike`
+ability and effect nodes. They add stable identity and multipliers; there is no
+duplicate physical implementation.
+
+Only Techniques use the V1 hit seam. Their fixed base chance is **90%**:
+
+```text
+final Technique chance = 0.90 × Technique Accuracy × Style Shift Accuracy
+```
+
+| Technique | Established | Style Shifted |
+|---|---:|---:|
+| Straight Slash | 90.000% | 76.500% |
+| Heavy Slash | 76.500% | 65.025% |
+| Steady Cut | 99.000% | 84.150% |
+| Precise Cut | 94.500% | 80.325% |
+| Adaptive Cut | 99.000% | 84.150% |
+| Risky Cut | 81.000% | 68.850% |
+
+Chances are integer millionths. Battle draws `0..999999` from the independent
+`battle.technique-hit` stream; a roll below the chance hits. A miss commits the
+action, emits `Missed`, ticks status and proceeds through the existing enemy
+response order, but draws nothing from `battle.effect`. BASIC ATTACK remains
+guaranteed and never performs this Technique roll.
+
+Changing Style is immediate and free while that actor owns the turn. Battle
+keeps both Active Style and the Style captured at the start of the turn. Shift
+is active exactly while those IDs differ:
+
+| Modifier while Style Shifted | Applied factor |
+|---|---:|
+| Technique accuracy | ×0.85 |
+| Every physical action's damage, including BASIC ATTACK | ×0.85 |
+| Positive stance modifier magnitude | ×0.85 |
+| Negative stance modifier magnitude | ×1.00 |
+
+The combined physical multiplier is applied once after the existing physical
+formula and before Guard and remaining-HP clamping. It never scales magical or
+legacy Prototype damage nodes. Switching away and back to the turn-start Style
+before acting removes Shift; the real Style-change events remain. The turn-start
+Style refreshes only when the unchanged fixed round-robin scheduler returns to
+the player for the next turn. Agility remains unused by stance, accuracy,
+damage and scheduling.
+
+Selecting root **ATTACK** opens one vertical screen: the current Style's two
+Techniques followed by **BASIC ATTACK**. Left/Right immediately switches among
+Sword → Water → North and clamps at the ends; Up/Down selects an action; Confirm
+opens the existing living-enemy target picker. Canceling a target returns to the
+same Style and row. A second Back returns to the Battle root. Neither Back path
+reverts an already applied Style change or spends a turn.
+
 ## Minimal equipment — preparation only
 
 From the field, press **E / Enter** to open **PREPARATION**. Choose
@@ -229,12 +308,14 @@ keeps its separate no-feed configuration because it has no external packages.
 | E / Enter / Space / A in Field | Open equipment preparation |
 | Tab in Field or Field menu | Open from Field; close immediately from any menu depth |
 | Controller Back / View / Select | Same conceptual Field-menu toggle as Tab |
-| Arrow keys / WASD in battle menus | Move spatially through rows and columns; stop at edges |
+| Arrow keys / WASD in Battle root and WIP menus | Move spatially through rows and columns; stop at edges |
+| Left / Right or A / D in Physical Style | Switch Active Style immediately; clamp Sword ↔ Water ↔ North |
+| Up / Down or W / S in Physical Style | Select Technique 1, Technique 2 or BASIC ATTACK |
 | Arrow keys / WASD / D-pad in Field menu | Move through the clamped 3×2 root or vertical child commands |
 | Up / Down or W / S in preparation | Choose preparation action, equipment slot or item |
 | Left / Right or A / D while targeting | Choose living enemy; stop at the ends |
 | Enter / Space | Confirm; advance battle text; close WIP message |
-| Escape / Backspace | Back one Field-menu level; cancel targeting; close WIP or remaining battle text |
+| Escape / Backspace | Back one menu level; target cancel returns to its action screen; close WIP or remaining battle text |
 | D-pad, A / B equivalents | Move, confirm / back |
 | F2 during battle | Open or close original event inspector; arrows scroll |
 | F3 inside the inspector | Save canonical events to `artifacts/visual/machine-events.log` |
@@ -256,8 +337,11 @@ menu's cursor; there is no wrap or configurable navigation policy.
 
 The four functional commands are:
 
-- **ATTACK:** choose Goblin or Wolf and submit the existing `Strike` ability.
-  Living enemies answer in the core's existing stable turn order.
+- **ATTACK:** open the Physical Style screen. Choose either current-Style
+  Technique or BASIC ATTACK, then choose Goblin or Wolf through the shared
+  target flow. Style switches are immediate/free and Back does not revert them.
+  BASIC reuses the existing guaranteed-hit `Strike`; living enemies answer in
+  the core's existing stable turn order.
 - **DEFEND:** spend the action guarding. Physical damage is halved after
   Defense mitigation, rounded down with minimum 1, then capped to remaining HP.
   Guard ends at the start of the defender's next **accepted** action; rejected
@@ -295,7 +379,8 @@ at a time. This is not frame-by-frame event playback.
 Only Strike is used by enemies in this visual fixture. The original headless
 scenario still exercises Crush, Drain and Weakened. Its golden log was
 intentionally updated for the earlier stat formula revision (see below), and
-is **unchanged by the equipment/grid, field-loop and Fireball updates**.
+is **unchanged by the equipment/grid, field-loop, Fireball and Combat Style
+updates** because its generic actors have no Style profiles.
 Fireball is the visual fixture's only MP-consuming player command; there is no
 healing or status-producing player command. These starting profiles are prototype
 data, not final balance. Victory and defeat are both valid results. No inventory,
@@ -307,15 +392,17 @@ summons, rewards, save flow or production UI infrastructure was added.
 pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
-This runs the **65 core tests in both Debug and Release**, the presentation
-tests (including traversal of all 149 battle WIP leaves and the Field menu
+This runs the **80 core tests in both Debug and Release**, the **39 presentation
+tests** (including traversal of all 149 battle WIP leaves and the Field menu
 tree), then opens Godot briefly
 for automated rendering/input checks. A graphical desktop is required for the
 last step. The QA injects keyboard and controller events through Godot's normal
 input path, captures native-resolution PNGs, checks the limited palette, and
 exercises equipment preview/equip/unequip, resource maxima, the battle snapshot
-and equipment lock, spatial navigation, Attack, Defend, Battle-adjusted Fireball,
-pre-target MP failure, Run, ordinary battle completion and logging.
+and equipment lock, spatial navigation, all three physical-action rows, immediate and
+back-persistent Style switching, BASIC ATTACK, a real Technique, Defend,
+Battle-adjusted Fireball, pre-target MP failure, Run, ordinary battle completion
+and logging.
 This does not claim a physical controller was tested.
 
 Results, engine logs and screenshots are written under `artifacts/visual/`;
@@ -330,7 +417,7 @@ nested Back behavior, window bounds and palette, live Status sheet,
 placeholders, Field-under-menu rendering, and Battle input isolation. Existing
 golden comparisons launch separate processes and compare exact bytes. The
 baseline is never regenerated by these commands. The current revision passes
-**264 isolated battle QA checks**, **183 field-loop QA checks**, and **87
+**282 isolated battle QA checks**, **193 field-loop QA checks**, and **87
 Field-menu QA checks** in the real engine.
 See [current RPG loop findings](RPG_LOOP_REPORT.md), the
 [historical equipment findings](EQUIPMENT_REPORT.md), the
@@ -369,7 +456,8 @@ fixed baseline. They do not regenerate or normalize the baseline.
 
 - One adventurer against **Goblin** and **Wolf**.
 - Three fixed fixture abilities—**Strike**, **Crush**, **Drain**—plus a Fireball
-  ability built from the authoritative chantless configuration.
+  ability built from the authoritative chantless configuration and six
+  Style-owned Technique identities that reuse Strike's physical implementation.
 - Exactly one status definition: **Weakened**.
 - Four small ops: damage, heal, apply status, spend mana. Spend mana is also
   exercised directly by a rejection test; ability costs are committed before effects.
@@ -386,28 +474,31 @@ fixed baseline. They do not regenerate or normalize the baseline.
 |---|---|
 | `Probe/Rules.cs` | Data literals, minimal context interface, ops, ordered evaluator, explicit RNG |
 | `Probe/Stats.cs` | Seven-stat value, base-to-effective resolver, centralized physical damage |
+| `Probe/PhysicalActions.cs` | Authoritative BASIC ATTACK identity and exact physical-action scaling helpers |
+| `Probe/CombatStyles.cs` | Three immutable Style definitions, six Technique definitions, stance and Shift math |
 | `Probe/Magic.cs` | Required Base Magic data, exact quarter steps, shared MP cost and Fireball ability factory |
 | `Probe/Equipment.cs` | Four slots, immutable item definitions/loadout, flat bonuses and four literals |
-| `Probe/CharacterPreparation.cs` | Authoritative player equipment/resources, per-spell last-used Magic, resolved snapshot entry, owned-result application and equipment guard |
+| `Probe/CharacterPreparation.cs` | Authoritative player equipment/resources, known/Primary Styles, per-spell last-used Magic, resolved snapshot entry, owned-result application and equipment guard |
 | `Probe/Field.cs` | Immutable map/collision data and retained field position/encounter state |
 | `Probe/GameState.cs` | Application-owned persistent player, encounter entry and result application |
-| `Probe/BattleState.cs` | Owned mutable battle state, turn progression, event emission, result boundary |
+| `Probe/BattleState.cs` | Owned mutable battle state, Style lifecycle, Technique hit seam, turn progression, event emission and result boundary |
 | `Probe/Scenario.cs` | Three abilities, two monsters, one status, scripted encounter fixture, log formatting |
 | `Probe/Program.cs` | Seed-in / canonical-log-out CLI |
-| `Tests/Program.cs`, `Tests/StatTests.cs`, `Tests/EquipmentTests.cs`, `Tests/FieldTests.cs`, `Tests/MagicTests.cs` | 65 behavior/regression tests, including 12 stat, 11 equipment, 10 field/persistence and 7 Magic tests |
+| `Tests/Program.cs`, `Tests/StatTests.cs`, `Tests/EquipmentTests.cs`, `Tests/FieldTests.cs`, `Tests/MagicTests.cs` | Existing core/stat/equipment/field/Magic regression coverage |
+| `Tests/CombatStyleTests.cs` | 15 focused Combat Style tests; 80 core tests total |
 | `golden/battle-20260909.log` | Current reviewed stat baseline; 73 events, 2,590 bytes |
 | `golden/archive/battle-20260909.pre-stats.log` | Preserved pre-stat baseline; 88 events, 3,080 bytes |
 | `REPORT.md` | Phase 1B handoff and the three deferred NON-BLOCKER findings |
-| `Visual/Presentation/BattleSession.cs` | Core-owning adapter, immutable views, four command routes, affordability and readable events |
+| `Visual/Presentation/BattleSession.cs` | Core-owning adapter, immutable Style views, typed BASIC/Technique/Defend/Fireball/Run routes, affordability and readable events |
 | `Visual/Presentation/Menu.cs` | Requested UI-only command tree, spatial grid and navigation stack |
-| `Visual/Presentation/HarnessController.cs` | Preparation/equipment flow, Battle cast draft, menu, target, WIP, text and debug state |
+| `Visual/Presentation/HarnessController.cs` | Preparation/equipment flow, Physical Style actions, Battle cast draft, menu, target, WIP, text and debug state |
 | `Visual/Presentation/GameController.cs` | Field/preparation/battle/game-over mode transitions and input routing |
 | `Visual/FieldScreen.cs` | Read-only field/player/enemy rendering using the existing pixel presentation |
 | `Visual/BattleScreen.cs`, `Visual/PixelArt.cs` | Input, low-resolution drawing, original bitmap glyphs and sprites |
 | `Visual/HarnessQa.cs` | Opt-in real-engine rendering and input checks |
 | `Visual/FieldQa.cs` | Real-engine acceptance checks for the full field/battle loop |
 | `Visual/project.godot`, `Visual/BattleScreen.tscn`, `Visual/Visual.csproj`, `Visual/NuGet.Config` | Small Godot C# host and local SDK configuration |
-| `VisualTests/` | 37 headless presentation tests, including five field-loop tests, without a Godot runtime dependency |
+| `VisualTests/` | 39 headless presentation tests, including Combat Style and field-loop coverage, without a Godot runtime dependency |
 | `launch-visual.ps1` | Build/launch or complete verification command |
 | `toolchain.ps1` | Shared cross-platform .NET 8 discovery and isolated CLI/cache environment |
 | `VISUAL_HARNESS_REPORT.md` | Integration findings, boundaries and verification evidence |

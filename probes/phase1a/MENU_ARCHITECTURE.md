@@ -1342,3 +1342,117 @@ Only the Fire leaf was activated. Water and every other sibling remain WIP.
 Transformation, Material Transformation, Size Manipulation and Polymorph as WIP
 leaves; Fireball does not collapse or rename that taxonomy. Chanted casting,
 multi-target Size behavior and additional Base Magics remain future seams.
+
+---
+
+## 22. Combat Styles V1 extension
+
+### 22.1 Scope and ownership
+
+Combat Styles extend only the existing player physical-action path. One
+immutable Style definition owns a stable ID, Japanese and English names, an
+ASCII Battle label, stance modifiers and exactly two immutable Techniques. A
+Technique owns identity and multipliers but references the authoritative BASIC
+ATTACK / `Strike` ability; it does not copy the physical formula or effect tree.
+
+`CharacterPreparation` knows all three Styles and fixes Sword God as Primary.
+It copies a value-only profile into each player `ActorSeed`. `BattleState`, not
+the UI or preparation layer, owns mutable Active Style and turn-start Style IDs,
+resolves submitted IDs against that snapshot, and rejects forged or foreign
+Techniques. Active Style is not part of `EncounterResult` and a new Battle starts
+in Sword God again. Generic actors may remain styleless; their multiplier is
+1.00, preserving the reviewed headless golden replay.
+
+### 22.2 Fixed prototype definitions
+
+| Stable Style ID | Name | Battle label | STR | DEF | RES |
+|---|---|---|---:|---:|---:|
+| `probe:style.sword-god` | 剣神流 / Sword God Style | `SWORD GOD` | +20% | -20% | — |
+| `probe:style.water-god` | 水神流 / Water God Style | `WATER GOD` | -15% | +20% | +15% |
+| `probe:style.north-god` | 北神流 / North God Style | `NORTH GOD` | +10% | -10% | +10% |
+
+| Owner | Stable Technique ID | Display | Damage | Accuracy |
+|---|---|---|---:|---:|
+| Sword God | `probe:technique.sword-god.straight-slash` | `STRAIGHT SLASH` | ×1.10 | ×1.00 |
+| Sword God | `probe:technique.sword-god.heavy-slash` | `HEAVY SLASH` | ×1.25 | ×0.85 |
+| Water God | `probe:technique.water-god.steady-cut` | `STEADY CUT` | ×0.90 | ×1.10 |
+| Water God | `probe:technique.water-god.precise-cut` | `PRECISE CUT` | ×1.00 | ×1.05 |
+| North God | `probe:technique.north-god.adaptive-cut` | `ADAPTIVE CUT` | ×1.00 | ×1.10 |
+| North God | `probe:technique.north-god.risky-cut` | `RISKY CUT` | ×1.15 | ×0.90 |
+
+Stance evaluation is
+`equipment-resolved stats → frozen Weakened subtraction → Active Style stance`.
+Only Strength, Defense and Resistance can change. The arithmetic is fixed-point
+with nearest rounding and midpoint values away from zero. MaxHP, MaxMP, Magic
+and Agility remain unchanged.
+
+### 22.3 Battle interaction and lifecycle
+
+The existing 3×3 root is unchanged. `ATTACK` now opens one one-column screen:
+
+```text
+CURRENT STYLE TECHNIQUE 1
+CURRENT STYLE TECHNIQUE 2
+BASIC ATTACK
+```
+
+Left/Right moves through Sword → Water → North, clamps at both ends, and applies
+the Style immediately for free. Up/Down changes the selected action without
+changing Style. Confirm opens the existing living-enemy target picker. Target
+cancel returns to the same Style and row; Back from there returns to the root.
+Neither Back operation reverts a Style already selected or consumes a turn.
+
+A legal Style change is available only to the actor that currently owns the
+turn. It updates Active Style and emits `StyleChanged`, while leaving the
+turn-start Style untouched. Re-selecting the active Style is a successful no-op
+without a duplicate event. Unknown, off-turn and post-Battle changes are
+rejected without mutation.
+
+Shift is exactly `ActiveStyleId != TurnStartStyleId`. Switching back before
+acting removes it. The fixed round-robin scheduler refreshes TurnStart Style to
+the current Active Style only when that actor's next turn begins, so Shift stays
+active throughout intervening enemy responses. No scheduler policy changed.
+
+### 22.4 Hit, damage and event contracts
+
+Only Technique commands use accuracy. The base chance is 90%, represented in
+integer millionths:
+
+```text
+chance = 0.90 × Technique Accuracy × (0.85 when Shifted, otherwise 1.00)
+```
+
+Battle draws `0..999999` from the independent `battle.technique-hit` stream.
+A lower roll hits. Rejected commands draw from neither RNG stream. A missed
+Technique is still a committed action: it emits `Missed`, runs status cleanup,
+advances the turn and permits normal enemy responses, without drawing from
+`battle.effect`.
+
+| Modifier while Shifted | Factor |
+|---|---:|
+| Technique accuracy | ×0.85 |
+| Technique and BASIC physical damage | ×0.85 |
+| Positive stance modifier magnitude | ×0.85 |
+| Negative stance modifier magnitude | ×1.00 |
+
+Technique Damage and Shift Damage combine once. The resulting scale applies to
+physical nodes after base power, Strength, Defense and variance, but before
+Guard and current-HP clamping. Magical and legacy Prototype nodes are not
+scaled. BASIC ATTACK remains guaranteed-hit and performs no Technique roll, but
+its damage and positive stance modifiers still receive the Shift penalties.
+
+`ActionStarted.Detail` is the stable Technique ID for a Technique and remains
+`probe:ability.strike` for BASIC ATTACK. `StyleChanged` and `Missed` are stable
+typed core events. Presentation maps definitions to readable names; no rule or
+persistent decision compares display text.
+
+### 22.5 Explicit exclusions
+
+V1 adds no general hit system, stat, Agility use, initiative or action-speed
+scheduling, progression, Style ranks, schools, teachers, Mastery, Favorites,
+counter/reaction rules, combos, feints, items or terrain interaction. Fireball,
+Defend, Run, equipment locking, Field persistence and result application keep
+their existing ownership and behavior.
+
+**Status: Combat Styles V1 is implemented through core, presentation, Godot
+input/rendering and deterministic verification.**
