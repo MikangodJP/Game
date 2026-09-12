@@ -1,6 +1,7 @@
 using Phase1A.Encounter;
 using Phase1A.Magic;
 using Phase1A.Rules;
+using Phase1A.Styles;
 
 namespace Phase1A.Preparation;
 
@@ -17,6 +18,8 @@ public sealed class CharacterPreparation
     public int Mp { get; private set; }
     public EquipmentLoadout Loadout { get; private set; } = EquipmentLoadout.Empty;
     public IReadOnlyList<BaseMagicDefinition> KnownBaseMagics { get; }
+    public IReadOnlyList<CombatStyleDefinition> KnownCombatStyles { get; }
+    public CombatStyleDefinition PrimaryCombatStyle { get; }
     public bool InBattle => activeBattle is not null && (coordinatorOwnsCompletion || !activeBattle.IsFinished);
 
     public CharacterPreparation(CharacterStats baseStats, int? hp = null, int? mp = null)
@@ -24,6 +27,8 @@ public sealed class CharacterPreparation
         baseStats.Validate();
         BaseStats = baseStats;
         KnownBaseMagics = Array.AsReadOnly(new[] { PrototypeMagic.Fireball });
+        KnownCombatStyles = PrototypeCombatStyles.All;
+        PrimaryCombatStyle = PrototypeCombatStyles.SwordGod;
         lastUsedChantlessMagic = KnownBaseMagics.ToDictionary(
             magic => magic.Id,
             magic => new ChantlessMagicConfiguration(

@@ -303,7 +303,8 @@ var tests = new (string Name, Action Run)[]
         Check(a.SequenceEqual(b), "fresh process outputs differ");
         Check(a.SequenceEqual(GoldenBytes()), "fresh process differs from golden");
     })
-}.Concat(StatTests.All).Concat(EquipmentTests.All).Concat(FieldTests.All).Concat(MagicTests.All).ToArray();
+}.Concat(StatTests.All).Concat(EquipmentTests.All).Concat(FieldTests.All)
+    .Concat(MagicTests.All).Concat(CombatStyleTests.All).ToArray();
 
 var failures = 0;
 foreach (var (name, run) in tests)

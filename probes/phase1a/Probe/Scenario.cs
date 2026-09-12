@@ -7,8 +7,7 @@ public static class Scenario
 {
     public const ulong GoldenSeed = 20260909;
     public static readonly StatusDef Weakened = new("probe:status.weakened", 2);
-    public static readonly Ability Strike = new("probe:ability.strike", 0,
-        [new(OpKind.Damage, new(TargetScope.Selected), new(Base: 2, Variance: 2), DamageKind: DamageKind.Physical)]);
+    public static readonly Ability Strike = PrototypePhysicalActions.BasicAttack;
     public static readonly Ability Crush = new("probe:ability.crush", 2,
         [new(OpKind.ApplyStatus, new(TargetScope.Selected), new(CasterStrength: 0.5), Status: Weakened),
          new(OpKind.Damage, new(TargetScope.PriorTargets, 0), new(Base: 1, Variance: 1), DamageKind: DamageKind.Physical)]);
