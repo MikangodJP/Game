@@ -13,7 +13,7 @@ public sealed class CharacterPreparation
     private bool coordinatorOwnsCompletion;
     private readonly Dictionary<string, ChantlessMagicConfiguration> lastUsedChantlessMagic;
     public CharacterStats BaseStats { get; }
-    public CharacterStats EffectiveStats => StatResolver.Resolve(BaseStats, equipment: Loadout.Bonuses);
+    public CharacterStats EffectiveStats => Resolve(Loadout);
     public int Hp { get; private set; }
     public int Mp { get; private set; }
     public EquipmentLoadout Loadout { get; private set; } = EquipmentLoadout.Empty;
@@ -63,7 +63,7 @@ public sealed class CharacterPreparation
         try
         {
             var next = Loadout.With(slot, item);
-            var stats = StatResolver.Resolve(BaseStats, equipment: next.Bonuses);
+            var stats = Resolve(next);
             Loadout = next;
             // A higher maximum does not grant healing; lower maxima clamp current resources.
             Hp = Math.Min(Hp, stats.MaxHp);
@@ -77,7 +77,14 @@ public sealed class CharacterPreparation
     }
 
     public CharacterStats Preview(EquipmentSlot slot, EquipmentDefinition? item) =>
-        StatResolver.Resolve(BaseStats, equipment: Loadout.With(slot, item).Bonuses);
+        Resolve(Loadout.With(slot, item));
+
+    private CharacterStats Resolve(EquipmentLoadout loadout) =>
+        StatResolver.Resolve(new StatResolutionRequest(BaseStats)
+        {
+            Modifiers = loadout.Modifiers,
+            MinimumBehavior = StatMinimumBehavior.Reject
+        });
 
     public BattleState BeginBattle(EncounterSetup template, int actorId = 0) => BeginBattleCore(template, actorId, false);
 

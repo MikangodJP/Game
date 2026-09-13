@@ -24,6 +24,31 @@ internal static class EquipmentTests
                 character.EffectiveStats);
             Equal(80, character.Hp); // Extra maximum HP grants no healing.
         }),
+        ("Typed equipment can modify Dexterity without widening its constructor", () =>
+        {
+            var character = new CharacterPreparation(Base);
+            var gloves = new EquipmentDefinition(
+                "fixture:equipment.dex-gloves",
+                "DEX Gloves",
+                EquipmentSlot.Accessory,
+                EquipmentBonuses.Create(builder =>
+                    builder.Set(StatId.Dexterity, 3)));
+            Check(character.TryEquip(EquipmentSlot.Accessory, gloves), "DEX gloves equipped");
+            Equal(3, character.EffectiveStats[StatId.Dexterity]);
+            Equal(Base.Strength, character.EffectiveStats.Strength);
+            Equal(Base.Defense, character.EffectiveStats.Defense);
+            Equal(3, character.Loadout.Bonuses[StatId.Dexterity]);
+            Equal(StatId.Dexterity, character.Loadout.Modifiers.Single().Stat);
+            Equal(gloves.Id, character.Loadout.Modifiers.Single().SourceId);
+        }),
+        ("Legacy equipment Defense maps only to PhysicalDefense", () =>
+        {
+            var bonuses = new EquipmentBonuses(Defense: 4);
+            Equal(4, bonuses[StatId.PhysicalDefense]);
+            Equal(4, bonuses.Defense);
+            Equal(0, bonuses[StatId.MagicalDefense]);
+            Equal(0, bonuses[StatId.Dexterity]);
+        }),
         ("Unequip restores a stat and replacement never stacks the previous slot item", () =>
         {
             var character = new CharacterPreparation(Base);

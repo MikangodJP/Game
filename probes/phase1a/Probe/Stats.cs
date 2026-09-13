@@ -138,20 +138,102 @@ public sealed class CharacterStatsBuilder
 
 public static class StatResolver
 {
+    private const long PercentBasis = 10_000;
+
+    public static CharacterStats Resolve(StatResolutionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.StartingStats.Validate();
+        if (!Enum.IsDefined(request.MinimumBehavior))
+            throw new ArgumentOutOfRangeException(nameof(request.MinimumBehavior));
+
+        var modifiers = request.Modifiers.IsDefault
+            ? ImmutableArray<StatModifier>.Empty
+            : request.Modifiers;
+        foreach (var modifier in modifiers)
+        {
+            StatCatalog.Definition(modifier.Stat);
+            if (!Enum.IsDefined(modifier.Operation))
+                throw new ArgumentOutOfRangeException(nameof(modifier.Operation));
+            if (string.IsNullOrWhiteSpace(modifier.SourceId))
+                throw new ArgumentException("Modifier source ID must not be blank.", nameof(request));
+        }
+
+        var ordered = modifiers
+            .OrderBy(modifier => modifier.Operation)
+            .ThenBy(modifier => modifier.SourcePriority)
+            .ThenBy(modifier => modifier.SourceId, StringComparer.Ordinal)
+            .ThenBy(modifier => modifier.Stat)
+            .ToArray();
+        var values = request.StartingStats.CopyValues().ToArray();
+        var percentages = new long[(int)StatId.Count];
+
+        foreach (var modifier in ordered)
+        {
+            var index = (int)modifier.Stat;
+            switch (modifier.Operation)
+            {
+                case StatModifierOperation.FlatAdd:
+                    values[index] = checked(values[index] + modifier.Amount);
+                    break;
+                case StatModifierOperation.PercentAdd:
+                    percentages[index] = checked(percentages[index] + modifier.Amount);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(modifier.Operation));
+            }
+        }
+
+        foreach (var definition in StatCatalog.Definitions)
+        {
+            var index = (int)definition.Id;
+            if (percentages[index] != 0)
+            {
+                var factor = checked(PercentBasis + percentages[index]);
+                var numerator = checked((long)values[index] * factor);
+                values[index] = checked((int)DivideRoundMidpointAwayFromZero(
+                    numerator, PercentBasis));
+            }
+            if (values[index] >= definition.Minimum) continue;
+            if (request.MinimumBehavior == StatMinimumBehavior.Clamp)
+                values[index] = definition.Minimum;
+            else
+                throw new ArgumentOutOfRangeException(
+                    nameof(request), $"{definition.StableId} resolved below {definition.Minimum}.");
+        }
+
+        return new(ImmutableArray.CreateRange(values));
+    }
+
     public static CharacterStats Resolve(CharacterStats baseStats, int existingWeakness = 0, EquipmentBonuses equipment = default)
     {
         baseStats.Validate();
         ArgumentOutOfRangeException.ThrowIfNegative(existingWeakness);
-        var equipped = new CharacterStats(
-            checked(baseStats.MaxHp + equipment.MaxHp), checked(baseStats.MaxMp + equipment.MaxMp),
-            checked(baseStats.Strength + equipment.Strength), checked(baseStats.Defense + equipment.Defense),
-            checked(baseStats.Magic + equipment.Magic), checked(baseStats.Resistance + equipment.Resistance),
-            checked(baseStats.Agility + equipment.Agility));
-        equipped.Validate();
-        // Equipment is already frozen for battle. Preserve the existing frozen Weakened amount.
-        return equipped
-            .With(StatId.Strength, Math.Max(0, equipped.Strength - existingWeakness))
-            .With(StatId.PhysicalDefense, Math.Max(0, equipped.Defense - existingWeakness));
+        var equipped = Resolve(new(baseStats)
+        {
+            Modifiers = equipment.ToModifiers("probe:compat.equipment"),
+            MinimumBehavior = StatMinimumBehavior.Reject
+        });
+        if (existingWeakness == 0) return equipped;
+        return Resolve(new(equipped)
+        {
+            Modifiers =
+            [
+                new(StatId.Strength, StatModifierOperation.FlatAdd,
+                    -existingWeakness, "probe:status.weakened"),
+                new(StatId.PhysicalDefense, StatModifierOperation.FlatAdd,
+                    -existingWeakness, "probe:status.weakened")
+            ],
+            MinimumBehavior = StatMinimumBehavior.Clamp
+        });
+    }
+
+    private static long DivideRoundMidpointAwayFromZero(long numerator, long denominator)
+    {
+        var quotient = Math.DivRem(numerator, denominator, out var remainder);
+        if (remainder * 2 >= denominator) return checked(quotient + 1);
+        if (remainder * 2 <= -denominator) return checked(quotient - 1);
+        return quotient;
     }
 }
 

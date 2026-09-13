@@ -87,6 +87,146 @@ internal static class StatTests
             })
                 Equal(0, stats[id]);
         }),
+        ("PercentAdd entries sum once and never compound within their layer", () =>
+        {
+            var starting = new CharacterStats(100, 20, 100, 10, 10, 10, 10);
+            var modifiers = ImmutableArray.Create(
+                new StatModifier(StatId.Strength, StatModifierOperation.PercentAdd,
+                    1_000, "fixture:percent-a"),
+                new StatModifier(StatId.Strength, StatModifierOperation.PercentAdd,
+                    2_000, "fixture:percent-b"));
+            var forward = StatResolver.Resolve(new(starting)
+            {
+                Modifiers = modifiers,
+                MinimumBehavior = StatMinimumBehavior.Reject
+            });
+            var reverse = StatResolver.Resolve(new(starting)
+            {
+                Modifiers = modifiers.Reverse().ToImmutableArray(),
+                MinimumBehavior = StatMinimumBehavior.Reject
+            });
+            Equal(130, forward.Strength);
+            Equal(forward, reverse);
+        }),
+        ("FlatAdd precedes summed PercentAdd with deterministic midpoint rounding", () =>
+        {
+            var starting = new CharacterStats(100, 20, 100, 10, 10, 10, 10);
+            var resolved = StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [
+                    new(StatId.Strength, StatModifierOperation.PercentAdd,
+                        5_000, "fixture:percent"),
+                    new(StatId.Strength, StatModifierOperation.FlatAdd,
+                        20, "fixture:flat")
+                ],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            });
+            Equal(180, resolved.Strength);
+
+            var orderedBySource = ImmutableArray.Create(
+                new StatModifier(StatId.Strength, StatModifierOperation.FlatAdd,
+                    int.MaxValue, "fixture:z"),
+                new StatModifier(StatId.Strength, StatModifierOperation.FlatAdd,
+                    -1, "fixture:a"));
+            Equal(int.MaxValue, StatResolver.Resolve(new(
+                new CharacterStats(100, 20, 1, 10, 10, 10, 10))
+            {
+                Modifiers = orderedBySource,
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }).Strength);
+            Equal(int.MaxValue, StatResolver.Resolve(new(
+                new CharacterStats(100, 20, 1, 10, 10, 10, 10))
+            {
+                Modifiers = orderedBySource.Reverse().ToImmutableArray(),
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }).Strength);
+
+            var orderedByPriority = ImmutableArray.Create(
+                new StatModifier(StatId.Strength, StatModifierOperation.FlatAdd,
+                    int.MaxValue, "fixture:a", SourcePriority: 1),
+                new StatModifier(StatId.Strength, StatModifierOperation.FlatAdd,
+                    -1, "fixture:z", SourcePriority: 0));
+            Equal(int.MaxValue, StatResolver.Resolve(new(
+                new CharacterStats(100, 20, 1, 10, 10, 10, 10))
+            {
+                Modifiers = orderedByPriority.Reverse().ToImmutableArray(),
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }).Strength);
+
+            var midpoint = StatResolver.Resolve(new(
+                new CharacterStats(100, 20, 5, 10, 10, 10, 10))
+            {
+                Modifiers =
+                [new(StatId.Strength, StatModifierOperation.PercentAdd,
+                    1_000, "fixture:midpoint")],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            });
+            Equal(6, midpoint.Strength);
+        }),
+        ("Resolution makes reject and clamp boundaries explicit", () =>
+        {
+            var starting = new CharacterStats(10, 0, 2, 1, 0, 0, 0);
+            var modifiers = ImmutableArray.Create(
+                new StatModifier(StatId.Strength, StatModifierOperation.FlatAdd,
+                    -5, "fixture:penalty"));
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                Modifiers = modifiers,
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+            var clamped = StatResolver.Resolve(new(starting)
+            {
+                Modifiers = modifiers,
+                MinimumBehavior = StatMinimumBehavior.Clamp
+            });
+            Equal(0, clamped.Strength);
+
+            var maximumClamped = StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [new(StatId.MaxHp, StatModifierOperation.FlatAdd,
+                    -20, "fixture:max-penalty")],
+                MinimumBehavior = StatMinimumBehavior.Clamp
+            });
+            Equal(1, maximumClamped.MaxHp);
+        }),
+        ("Resolution rejects malformed modifiers unsupported operations and overflow", () =>
+        {
+            var starting = new CharacterStats(10, 0, int.MaxValue, 1, 0, 0, 0);
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [new(StatId.Strength, StatModifierOperation.FlatAdd, 1, "fixture:overflow")],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [new((StatId)999, StatModifierOperation.FlatAdd, 1, "fixture:bad-stat")],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [new(StatId.Strength, (StatModifierOperation)999, 1, "fixture:bad-op")],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                Modifiers =
+                [new(StatId.Strength, StatModifierOperation.FlatAdd, 1, " ")],
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+            Throws(() => StatResolver.Resolve(new(starting)
+            {
+                MinimumBehavior = (StatMinimumBehavior)999
+            }));
+            Equal(starting, StatResolver.Resolve(new(starting)
+            {
+                MinimumBehavior = StatMinimumBehavior.Reject
+            }));
+        }),
         ("Base stats initialize full HP and MP with all seven effective values", () =>
         {
             var stats = new CharacterStats(93, 17, 20, 9, 6, 5, 14);
