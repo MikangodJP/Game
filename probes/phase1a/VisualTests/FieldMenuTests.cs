@@ -110,7 +110,18 @@ internal static class FieldMenuTests
         }),
         ("Status projects current player vitals and all seven effective stats", () =>
         {
-            var player = Player(hp: 47, mp: 3);
+            var expanded = Scenario.Setup(Scenario.GoldenSeed).Actors[0].InitialStats
+                .ToBuilder()
+                .Set(StatId.Dexterity, 21)
+                .Set(StatId.Speed, 22)
+                .Set(StatId.Endurance, 23)
+                .Set(StatId.Constitution, 24)
+                .Set(StatId.Intelligence, 25)
+                .Set(StatId.Reflex, 26)
+                .Set(StatId.Balance, 27)
+                .Set(StatId.MagicDexterity, 28)
+                .Build();
+            var player = new CharacterPreparation(expanded, hp: 47, mp: 3);
             Check(player.TryEquip(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword), "test sword equips");
             Check(player.TryEquip(EquipmentSlot.Body, PrototypeEquipment.LeatherArmor), "test armor equips");
             var menu = new FieldMenuController();
@@ -124,6 +135,15 @@ internal static class FieldMenuTests
             SequenceEqual(
                 ["ADVENTURER", "47/80", "3/12", "15", "12", "6", "6", "10"],
                 panel.Rows.Select(row => row.Value));
+            Equal(player.EffectiveStats[StatId.PhysicalDefense],
+                int.Parse(panel.Rows.Single(row => row.Label == "DEF").Value));
+            Equal(player.EffectiveStats[StatId.MagicalDefense],
+                int.Parse(panel.Rows.Single(row => row.Label == "RES").Value));
+            Equal(player.EffectiveStats[StatId.LegacyAgility],
+                int.Parse(panel.Rows.Single(row => row.Label == "AGI").Value));
+            Check(!panel.Rows.Select(row => row.Label).Intersect(
+                    new[] { "DEX", "SPD", "END", "CON", "INT", "RFL", "BAL", "MDEX" })
+                .Any(), "expanded stats remain absent from the current Status page");
 
             var frozen = panel;
             menu.Back();

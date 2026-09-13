@@ -3,6 +3,8 @@
 Historical record of the stat-only revision. The subsequent
 [equipment and command-grid update](EQUIPMENT_REPORT.md) adds preparation and
 moves the detailed stat display out of battle; its golden baseline is unchanged.
+The implemented Expanded Stats Foundation V1 is recorded in the addendum at the
+end; the original findings below remain historical evidence.
 
 Verified 2026-09-09. This is a disposable stat model, not the owner's eventual
 RPG stat design. No equipment, growth, new statuses, magic formulas, turn-speed
@@ -162,3 +164,66 @@ a second legacy rules engine.
   `REPORT.md` and `VISUAL_HARNESS_REPORT.md`.
 - Architecture documents, original sprites, menu hierarchy, input bindings and
   launch scripts were not changed.
+
+---
+
+## Expanded Stats Foundation V1 addendum — 2026-09-13
+
+The former seven-position value is now one immutable dense block keyed by the
+closed `StatId` enum. `StatCatalog` defines the persistence-safe identities in
+deterministic enum order:
+
+| StatId | Stable ID | StatId | Stable ID |
+|---|---|---|---|
+| MaxHp | `core:stat.max-hp` | MaxMp | `core:stat.max-mp` |
+| Strength | `core:stat.strength` | Magic | `core:stat.magic` |
+| Dexterity | `core:stat.dexterity` | Speed | `core:stat.speed` |
+| Endurance | `core:stat.endurance` | Constitution | `core:stat.constitution` |
+| Intelligence | `core:stat.intelligence` | Reflex | `core:stat.reflex` |
+| Balance | `core:stat.balance` | PhysicalDefense | `core:stat.physical-defense` |
+| MagicalDefense | `core:stat.magical-defense` | MagicDexterity | `core:stat.magic-dexterity` |
+| LegacyAgility | `core:stat.legacy-agility` | | |
+
+Current HP and MP remain mutable resources outside the stored block. The legacy
+constructor and properties are aliases over the same storage: Defense maps to
+PhysicalDefense, Resistance to MagicalDefense, and Agility only to the isolated
+LegacyAgility slot. The legacy bridge supplies zero for DEX/SPD/END/CON/INT/RFL/
+BAL/MDEX; it never reinterprets Agility as one of them. New fixtures can use the
+builder and `StatId` indexer without widening constructors.
+
+`StatModifier` freezes one typed contribution with source provenance. The
+resolver validates all input before arithmetic, orders modifiers by operation,
+priority, ordinal source ID, and stat, applies checked FlatAdd values, then sums
+all PercentAdd basis points for each stat and applies the sum exactly once.
+Independent percentages in one layer therefore do not compound. Results use
+deterministic midpoint-away-from-zero rounding and an explicit final `Reject` or
+`Clamp` policy.
+
+Persistent preparation resolves base plus equipment with `Reject`. Battle owns
+the copied result and resolves frozen Weakened flats before active Style
+percentages with `Clamp`, preserving the established sequence:
+
+```text
+base + equipment -> copied Battle snapshot -> Weakened -> Style
+```
+
+The existing derived calculators now read canonical IDs: physical and Drain use
+Strength/PhysicalDefense, while Fireball uses Magic/MagicalDefense. No formula,
+coefficient, RNG stream, BASIC guaranteed-hit rule, Technique hit chance, Style
+Shift rule, or fixed round-robin scheduling changed. New unused values and
+LegacyAgility cannot affect these paths.
+
+Variable condition, physiology, environment, and social/world parameters remain
+separate future owners. Flow is not implemented; its future effective-stat
+inputs are Reflex, Dexterity, and Balance, while Technique Mastery belongs to a
+separate future Technique-keyed owner. Derived results are calculations rather
+than stored stats. No new balance values, conditions, hit/dodge/critical system,
+initiative, action delay, progression, inventory, save format, or grouped Status
+page was added. The visible Status and equipment comparison remain the exact
+legacy seven-label projection.
+
+The one complete gate on 2026-09-13 passed 94/94 core tests in both Debug and
+Release and 40/40 headless presentation tests. The C# builds reported zero
+warnings and zero errors. Godot completed 282 Battle, 193 Field, and 87 Field
+Menu checks; `qa.txt`, `field-qa.txt`, and `menu-qa.txt` each ended in
+`PASS ALL`. The reviewed golden replay remained byte-exact.

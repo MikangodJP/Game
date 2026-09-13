@@ -89,11 +89,40 @@ child window, then closes from the root. **Tab / controller View-Select** closes
 immediately from any menu depth. Menu windows use literal black, white one-pixel
 borders/text, and the existing bitmap font at native 320×240 resolution.
 
-## Minimal character stats — temporary prototype
+## Expanded Stats Foundation V1
 
-The seven integer stats are **MaxHP, MaxMP, Strength, Defense, Magic,
-Resistance and Agility**. The implementation is intentionally small and may be
-replaced by the owner's later stat design.
+`CharacterStats` is one immutable, enum-indexed block with fifteen canonical
+stored values. Gameplay addresses them by `StatId`; stable IDs are the future
+persistence identity and enum ordinals are never a save format. Current HP/MP
+remain mutable resources outside this block.
+
+| StatId | Stable ID | Label | Current role |
+|---|---|---|---|
+| MaxHp | `core:stat.max-hp` | MAXHP | resource capacity |
+| MaxMp | `core:stat.max-mp` | MAXMP | resource capacity |
+| Strength | `core:stat.strength` | STR | current physical formulas |
+| Magic | `core:stat.magic` | MAG | current Fireball offense |
+| Dexterity | `core:stat.dexterity` | DEX | future capability input |
+| Speed | `core:stat.speed` | SPD | future capability input |
+| Endurance | `core:stat.endurance` | END | future capability input |
+| Constitution | `core:stat.constitution` | CON | future capability input |
+| Intelligence | `core:stat.intelligence` | INT | future capability input |
+| Reflex | `core:stat.reflex` | RFL | future Flow input |
+| Balance | `core:stat.balance` | BAL | future Flow input |
+| PhysicalDefense | `core:stat.physical-defense` | PHYDEF | current physical mitigation |
+| MagicalDefense | `core:stat.magical-defense` | MGKDEF | current Fireball mitigation |
+| MagicDexterity | `core:stat.magic-dexterity` | MDEX | future capability input |
+| LegacyAgility | `core:stat.legacy-agility` | AGI | isolated compatibility value |
+
+The old seven-argument constructor remains a migration seam. `Defense` aliases
+PhysicalDefense, `Resistance` aliases MagicalDefense, and `Agility` aliases only
+LegacyAgility. It does not infer Dexterity, Speed, or Reflex; all new slots are
+mapped to zero by this old construction path. New authored fixtures should use
+`CharacterStats.Create(builder => builder.Set(StatId..., value))` or the typed
+indexer and set every value they intend to carry.
+
+The existing prototype profiles remain numerically unchanged through that
+compatibility seam:
 
 | Actor | MaxHP | MaxMP | STR | DEF | MAG | RES | AGI |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -128,24 +157,41 @@ half the actual applied damage, rounded away from zero at midpoints. Drain is
 not classified as magic and does not consume Magic/Resistance. Its existing
 prototype guard behavior may reduce one damage to zero.
 
-**Magic and Resistance now form the dedicated Fireball damage seam.** Fireball's
-Output scales its base power, then Magic adds offense and half Resistance
+**Magic and MagicalDefense form the dedicated Fireball damage seam.** Fireball's
+Output scales its base power, then Magic adds offense and half MagicalDefense
 (rounded down) mitigates it. Size does not multiply a single target; it affects
-the shared MP-cost calculation. Agility remains stored/displayed only. None of
+the shared MP-cost calculation. `Resistance` remains a compatibility name and
+INT, CON, and MDEX do not affect Fireball V1. LegacyAgility remains
+stored/displayed only. None of
 these stats changes targeting or the existing round-robin turn order.
 
-`CharacterStats` is an immutable value. `StatResolver.Resolve` is the one seam
-between base and effective stats. It now adds flat equipment bonuses during
-preparation. Battle receives those resolved values and applies the already-existing
-frozen Weakened subtraction from Strength and Defense. No new status, class,
-skill, stacking or generic modifier framework exists. Combat reads effective
-stats through actor snapshots. Caster stats remain frozen per action; target
-stats remain fresh per effect node. UI receives read-only values.
+`StatResolver.Resolve(StatResolutionRequest)` is the one deterministic seam
+between stored and effective values. It validates all typed modifiers, applies
+checked `FlatAdd` entries first, then sums all independent `PercentAdd` basis
+points per stat and applies that total once with midpoint-away-from-zero
+rounding. Persistent equipment uses `Reject`; Battle-local Weakened and Style
+resolution uses `Clamp`. The observable ownership order remains
+**base + equipment → copied Battle snapshot → frozen Weakened subtraction →
+active Style percentage**. No percentage source compounds merely because it
+was appended earlier.
 
-Detailed stats are displayed only on the out-of-battle preparation/equipment
-screen. The battle party panel shows name, HP/MP and current status. Enemy
+Physical, magical, and Drain outputs remain pure derived calculators over an
+effective snapshot; derived values are not stored in `CharacterStats`. Combat
+still freezes caster stats per action and reads targets fresh per effect node.
+
+The current Status and preparation projections deliberately remain the legacy
+visible set `NAME, HP, MP, STR, DEF, MAG, RES, AGI`; the new values are not
+automatically dumped into the UI. The battle party panel shows name, HP/MP and current status. Enemy
 profiles remain available in the presentation read model for debugging.
 See the [historical stat integration and golden revision](STAT_SYSTEM_REPORT.md).
+
+Variable parameters such as conditions, physiology, environment, and
+social/world state remain outside `CharacterStats` and require separate owners
+with their own lifecycles. Flow is not implemented. Its future character inputs
+are read from effective `Reflex`, `Dexterity`, and `Balance`; Technique Mastery
+belongs to a separate future owner keyed by Technique ID. V1 adds no derived
+Flow value, hit/dodge/critical formula, initiative, action delay, new balance
+values, condition system, inventory behavior, or grouped Status UI.
 
 ## Combat Styles V1 — physical Battle actions
 
@@ -159,10 +205,11 @@ persist into a later encounter.
 | `probe:style.water-god` | 水神流 / Water God Style | `WATER GOD` | -15% | +20% | +15% |
 | `probe:style.north-god` | 北神流 / North God Style | `NORTH GOD` | +10% | -10% | +10% |
 
-The stance is applied after equipment resolution and the existing frozen
-Weakened subtraction. It modifies only Strength, Defense and Resistance with
-integer fixed-point arithmetic and nearest rounding, with midpoint values away
-from zero. MaxHP, MaxMP, Magic and Agility are unchanged.
+The stance is emitted as typed `PercentAdd` modifiers after equipment resolution
+and the existing frozen Weakened subtraction. The three prototypes modify only
+Strength, PhysicalDefense and MagicalDefense with integer fixed-point arithmetic
+and midpoint-away-from-zero rounding. MaxHP, MaxMP, Magic and LegacyAgility are
+unchanged.
 
 Each Style owns exactly two prototype Techniques:
 
@@ -250,7 +297,8 @@ compatible slots and flat bonuses. `EquipmentLoadout` separately records the
 selected definition per slot. Replacing a selection does not stack the former
 item; incompatible slots are rejected. Definitions and loadouts are immutable.
 `CharacterPreparation` owns the current loadout and resources. Base stats remain
-unchanged: **BaseStats + EquipmentBonuses → EffectiveStats → Combat**.
+unchanged: **BaseStats + typed equipment FlatAdd modifiers → EffectiveStats →
+copied Battle snapshot**.
 Attack does not query equipment or recognize item IDs.
 
 On any out-of-battle equipment change, current HP and MP are clamped to their
@@ -392,7 +440,7 @@ summons, rewards, save flow or production UI infrastructure was added.
 pwsh ./probes/phase1a/launch-visual.ps1 -Verify
 ```
 
-This runs the **80 core tests in both Debug and Release**, the **39 presentation
+This runs the **94 core tests in both Debug and Release**, the **40 presentation
 tests** (including traversal of all 149 battle WIP leaves and the Field menu
 tree), then opens Godot briefly
 for automated rendering/input checks. A graphical desktop is required for the
@@ -466,18 +514,20 @@ fixed baseline. They do not regenerate or normalize the baseline.
   No production assembly hierarchy or dependency-checking framework.
 - The headless core has no dependency on Godot or the visual harness. There is
   no JSON content, schema, pack, registry, mod, save system, full modifier pipeline
-  or world simulation. The original architecture documents remain untouched.
+  with multiplicative/override operations, or world simulation. The implemented
+  resolver is limited to typed FlatAdd and summed PercentAdd layers.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `Probe/Rules.cs` | Data literals, minimal context interface, ops, ordered evaluator, explicit RNG |
-| `Probe/Stats.cs` | Seven-stat value, base-to-effective resolver, centralized physical damage |
+| `Probe/StatCatalog.cs` | Closed V1 StatId catalog, stable IDs, labels, categories and minima |
+| `Probe/Stats.cs`, `Probe/StatModifiers.cs` | Immutable expanded value block, deterministic typed modifier resolver, physical and magical calculators |
 | `Probe/PhysicalActions.cs` | Authoritative BASIC ATTACK identity and exact physical-action scaling helpers |
 | `Probe/CombatStyles.cs` | Three immutable Style definitions, six Technique definitions, stance and Shift math |
 | `Probe/Magic.cs` | Required Base Magic data, exact quarter steps, shared MP cost and Fireball ability factory |
-| `Probe/Equipment.cs` | Four slots, immutable item definitions/loadout, flat bonuses and four literals |
+| `Probe/Equipment.cs` | Four slots, immutable item definitions/loadout, typed flat bonuses and four literals |
 | `Probe/CharacterPreparation.cs` | Authoritative player equipment/resources, known/Primary Styles, per-spell last-used Magic, resolved snapshot entry, owned-result application and equipment guard |
 | `Probe/Field.cs` | Immutable map/collision data and retained field position/encounter state |
 | `Probe/GameState.cs` | Application-owned persistent player, encounter entry and result application |
@@ -485,7 +535,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Probe/Scenario.cs` | Three abilities, two monsters, one status, scripted encounter fixture, log formatting |
 | `Probe/Program.cs` | Seed-in / canonical-log-out CLI |
 | `Tests/Program.cs`, `Tests/StatTests.cs`, `Tests/EquipmentTests.cs`, `Tests/FieldTests.cs`, `Tests/MagicTests.cs` | Existing core/stat/equipment/field/Magic regression coverage |
-| `Tests/CombatStyleTests.cs` | 15 focused Combat Style tests; 80 core tests total |
+| `Tests/CombatStyleTests.cs` | 17 focused Combat Style tests; 94 core tests total |
 | `golden/battle-20260909.log` | Current reviewed stat baseline; 73 events, 2,590 bytes |
 | `golden/archive/battle-20260909.pre-stats.log` | Preserved pre-stat baseline; 88 events, 3,080 bytes |
 | `REPORT.md` | Phase 1B handoff and the three deferred NON-BLOCKER findings |
@@ -498,7 +548,7 @@ fixed baseline. They do not regenerate or normalize the baseline.
 | `Visual/HarnessQa.cs` | Opt-in real-engine rendering and input checks |
 | `Visual/FieldQa.cs` | Real-engine acceptance checks for the full field/battle loop |
 | `Visual/project.godot`, `Visual/BattleScreen.tscn`, `Visual/Visual.csproj`, `Visual/NuGet.Config` | Small Godot C# host and local SDK configuration |
-| `VisualTests/` | 39 headless presentation tests, including Combat Style and field-loop coverage, without a Godot runtime dependency |
+| `VisualTests/` | 40 headless presentation tests, including expanded-stat projection, Combat Style and field-loop coverage, without a Godot runtime dependency |
 | `launch-visual.ps1` | Build/launch or complete verification command |
 | `toolchain.ps1` | Shared cross-platform .NET 8 discovery and isolated CLI/cache environment |
 | `VISUAL_HARNESS_REPORT.md` | Integration findings, boundaries and verification evidence |

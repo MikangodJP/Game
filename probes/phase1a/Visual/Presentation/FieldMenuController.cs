@@ -1,4 +1,5 @@
 using Phase1A.Preparation;
+using Phase1A.Rules;
 
 namespace Phase1A.Visual.Presentation;
 
@@ -131,13 +132,17 @@ public sealed class FieldMenuController
         return ReadOnly<FieldMenuStatusRow>(
         [
             new("NAME", "ADVENTURER"),
-            new("HP", $"{player.Hp}/{stats.MaxHp}"),
-            new("MP", $"{player.Mp}/{stats.MaxMp}"),
-            new("STR", stats.Strength.ToString()),
-            new("DEF", stats.Defense.ToString()),
-            new("MAG", stats.Magic.ToString()),
-            new("RES", stats.Resistance.ToString()),
-            new("AGI", stats.Agility.ToString())
+            new("HP", $"{player.Hp}/{stats[StatId.MaxHp]}"),
+            new("MP", $"{player.Mp}/{stats[StatId.MaxMp]}"),
+            .. new (string Label, StatId Stat)[]
+            {
+                ("STR", StatId.Strength),
+                ("DEF", StatId.PhysicalDefense),
+                ("MAG", StatId.Magic),
+                ("RES", StatId.MagicalDefense),
+                ("AGI", StatId.LegacyAgility)
+            }.Select(entry => new FieldMenuStatusRow(
+                entry.Label, stats[entry.Stat].ToString()))
         ]);
     }
 

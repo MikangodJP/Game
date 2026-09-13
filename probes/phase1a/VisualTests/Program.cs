@@ -38,6 +38,35 @@ var tests = new (string Name, Action Run)[]
         var untouched = new BattleSession();
         Check(untouched.Submit(MenuAction.Attack, 2), "control attack accepted");
         Equal(untouched.MachineText, session.MachineText);
+
+        var expanded = new CharacterStats(80, 12, 12, 8, 6, 6, 10)
+            .ToBuilder()
+            .Set(StatId.Dexterity, 21)
+            .Set(StatId.Speed, 22)
+            .Set(StatId.Endurance, 23)
+            .Set(StatId.Constitution, 24)
+            .Set(StatId.Intelligence, 25)
+            .Set(StatId.Reflex, 26)
+            .Set(StatId.Balance, 27)
+            .Set(StatId.MagicDexterity, 28)
+            .Build();
+        var expandedBattle = new BattleState(new EncounterSetup(
+        [
+            new("fixture:hero", "hero", Side.Adventurers, expanded),
+            new("fixture:enemy-a", null, Side.Monsters,
+                new CharacterStats(10, 0, 0, 0, 0, 0, 0)),
+            new("fixture:enemy-b", null, Side.Monsters,
+                new CharacterStats(10, 0, 0, 0, 0, 0, 0))
+        ], 11));
+        var expandedView = new BattleSession(expandedBattle).View.Hero;
+        Equal(expanded, expandedView.EffectiveStats);
+        Equal(26, expandedView.EffectiveStats[StatId.Reflex]);
+        var changedProjection = expandedView with
+        {
+            EffectiveStats = expandedView.EffectiveStats.With(StatId.Reflex, 999)
+        };
+        Equal(999, changedProjection.EffectiveStats[StatId.Reflex]);
+        Equal(26, expandedBattle.Read(0).EffectiveStats[StatId.Reflex]);
     }),
     ("Battle read model exposes immutable active Style and current Techniques", () =>
     {
@@ -540,6 +569,24 @@ var tests = new (string Name, Action Run)[]
         Check(ui.IsPreparing && !ui.Preparation.InBattle, "ended restart returns to fresh preparation");
         Check(ui.Slots.All(slot => ui.Preparation.Loadout.Get(slot) is null), "new preparation has empty gear");
         Equal(new CharacterStats(80, 12, 12, 8, 6, 6, 10), ui.Preparation.EffectiveStats);
+    }),
+    ("Preparation change projection keeps the existing seven visible labels", () =>
+    {
+        var current = new CharacterStats(80, 12, 12, 8, 6, 6, 10);
+        var candidate = current.ToBuilder()
+            .Set(StatId.MaxHp, 85)
+            .Set(StatId.Strength, 15)
+            .Set(StatId.PhysicalDefense, 12)
+            .Set(StatId.Dexterity, 99)
+            .Set(StatId.Reflex, 88)
+            .Build();
+        Check(PreparationStatProjection.ChangedStats(current, candidate)
+            .SequenceEqual(new[]
+            {
+                "MAXHP 80 > 85",
+                "STR 12 > 15",
+                "DEF 8 > 12"
+            }), "expanded values stay out of the current preparation comparison");
     }),
     ("Prepared Sword and Armor affect real Strike damage through effective snapshots", () =>
     {

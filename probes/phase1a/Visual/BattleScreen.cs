@@ -295,13 +295,13 @@ public partial class BattleScreen : Node2D
         Window(204, 26, 108, 174);
         Text("EFFECTIVE", 214, 37, Gold);
         var stats = preparation.EffectiveStats;
-        Text($"HP {preparation.Hp}/{stats.MaxHp}", 214, 58, Green);
-        Text($"MP {preparation.Mp}/{stats.MaxMp}", 214, 74, Blue);
-        Text($"STR {stats.Strength}", 214, 96, Paper);
-        Text($"DEF {stats.Defense}", 214, 111, Paper);
-        Text($"MAG {stats.Magic}", 214, 132, Muted);
-        Text($"RES {stats.Resistance}", 214, 147, Muted);
-        Text($"AGI {stats.Agility}", 214, 162, Muted);
+        Text($"HP {preparation.Hp}/{stats[StatId.MaxHp]}", 214, 58, Green);
+        Text($"MP {preparation.Mp}/{stats[StatId.MaxMp]}", 214, 74, Blue);
+        Text($"STR {stats[StatId.Strength]}", 214, 96, Paper);
+        Text($"DEF {stats[StatId.PhysicalDefense]}", 214, 111, Paper);
+        Text($"MAG {stats[StatId.Magic]}", 214, 132, Muted);
+        Text($"RES {stats[StatId.MagicalDefense]}", 214, 147, Muted);
+        Text($"AGI {stats[StatId.LegacyAgility]}", 214, 162, Muted);
         Text("MAG/RES/AGI", 214, 180, Muted);
         Text("ARE WIP", 214, 189, Muted);
 
@@ -314,9 +314,10 @@ public partial class BattleScreen : Node2D
                 PrepChoice(labels[i], 16, 59 + i * 20, ui.EquipmentIndex == i, 174);
             Window(8, 148, 190, 52);
             Text("PREVIEW ONLY", 16, 157, Gold);
-            var changes = ChangedStats(stats, ui.PreviewStats);
-            if (changes.Count == 0) Text("NO STAT CHANGE", 16, 175, Muted);
-            else for (var i = 0; i < changes.Count; i++) Text(changes[i], 16, 173 + i * 9, Green);
+            var changes = PreparationStatProjection.ChangedStats(
+                stats, ui.PreviewStats);
+            if (changes.Length == 0) Text("NO STAT CHANGE", 16, 175, Muted);
+            else for (var i = 0; i < changes.Length; i++) Text(changes[i], 16, 173 + i * 9, Green);
         }
         else
         {
@@ -353,20 +354,6 @@ public partial class BattleScreen : Node2D
             Text(">", x - 2, y, Gold);
         }
         Text(label, x + 8, y, selected ? Paper : Muted);
-    }
-
-    private static List<string> ChangedStats(CharacterStats current, CharacterStats candidate)
-    {
-        var changes = new List<string>();
-        foreach (var (name, before, after) in new[]
-        {
-            ("MAXHP", current.MaxHp, candidate.MaxHp), ("MAXMP", current.MaxMp, candidate.MaxMp),
-            ("STR", current.Strength, candidate.Strength), ("DEF", current.Defense, candidate.Defense),
-            ("MAG", current.Magic, candidate.Magic), ("RES", current.Resistance, candidate.Resistance),
-            ("AGI", current.Agility, candidate.Agility)
-        })
-            if (before != after) changes.Add($"{name} {before} > {after}");
-        return changes;
     }
 
     private void DrawWip()

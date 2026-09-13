@@ -189,3 +189,34 @@ public sealed class BattleSession
         return preparation.BeginBattle(setup);
     }
 }
+
+public static class PreparationStatProjection
+{
+    private static readonly ImmutableArray<(string Label, StatId Stat)> VisibleStats =
+    [
+        ("MAXHP", StatId.MaxHp),
+        ("MAXMP", StatId.MaxMp),
+        ("STR", StatId.Strength),
+        ("DEF", StatId.PhysicalDefense),
+        ("MAG", StatId.Magic),
+        ("RES", StatId.MagicalDefense),
+        ("AGI", StatId.LegacyAgility)
+    ];
+
+    public static ImmutableArray<string> ChangedStats(
+        CharacterStats current,
+        CharacterStats candidate)
+    {
+        current.Validate();
+        candidate.Validate();
+        var changes = ImmutableArray.CreateBuilder<string>();
+        foreach (var (label, stat) in VisibleStats)
+        {
+            var before = current[stat];
+            var after = candidate[stat];
+            if (before != after)
+                changes.Add($"{label} {before} > {after}");
+        }
+        return changes.ToImmutable();
+    }
+}

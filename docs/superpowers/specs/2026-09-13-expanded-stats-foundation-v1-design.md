@@ -1,6 +1,6 @@
 # Expanded Stats Foundation V1 Design
 
-**Status:** Proposed 2026-09-13 — awaiting owner approval
+**Status:** Approved and implemented 2026-09-13
 **Scope:** Phase 1A architectural foundation only; no new gameplay formulas or UI pages
 
 ## Decision Summary

@@ -1456,3 +1456,51 @@ their existing ownership and behavior.
 
 **Status: Combat Styles V1 is implemented through core, presentation, Godot
 input/rendering and deterministic verification.**
+
+---
+
+## 23. Expanded Stats Foundation V1 extension
+
+The rules layer now owns one closed fifteen-entry `StatId` catalog and one
+immutable value block. Stable `core:stat.*` IDs are persistence identities;
+presentation never discovers stats by reflection or display text. Current HP/MP
+remain separate mutable resources. Defense and Resistance are compatibility
+aliases for PhysicalDefense and MagicalDefense; old Agility is isolated as
+LegacyAgility and is not mapped to DEX, SPD, or RFL.
+
+Equipment emits typed FlatAdd modifiers during persistent preparation. Battle
+starts from that copied result, emits frozen Weakened FlatAdd modifiers, then
+the active Style emits typed PercentAdd basis points. The resolver applies flats
+before percentages and sums independent percentages per stat before applying
+them once, preserving `equipment → Weakened → Style` without compounding by
+insertion order. Persistent totals reject invalid minima; Battle-local totals
+clamp at catalog minima.
+
+The current Field Status contract is deliberately unchanged:
+
+```text
+NAME, HP, MP, STR, DEF, MAG, RES, AGI
+```
+
+The equipment comparison likewise remains MAXHP, MAXMP, STR, DEF, MAG, RES,
+AGI. These are explicit presentation projections onto canonical IDs; DEX, SPD,
+END, CON, INT, RFL, BAL, and MDEX are retained in immutable Battle views but are
+not automatically displayed. `StatCatalog` category metadata is the seam for a
+later approved grouped Status design; no tabs, groups, scrolling, or new rows
+were added here.
+
+Physical/Drain and Fireball calculations read canonical effective values but
+retain all existing formulas. BASIC remains guaranteed-hit, Technique accuracy
+keeps the independent `battle.technique-hit` stream, Style Shift rules are
+unchanged, and the scheduler remains fixed round-robin. Flow is not implemented:
+future inputs may read effective RFL/DEX/BAL, while Technique Mastery remains a
+separate Technique-keyed concern. Conditions, variable parameters, derived
+results, inventory, initiative, and action delay remain outside this slice.
+
+**Status: Expanded Stats Foundation V1 is implemented without changing the
+current menu surface.**
+
+The 2026-09-13 complete gate passed 94/94 core tests in Debug and Release,
+40/40 presentation-model tests, and the unchanged 282/193/87 Battle, Field, and
+Menu engine checks. All three QA reports ended in `PASS ALL`; the golden replay
+remained byte-exact.
