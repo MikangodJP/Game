@@ -18,7 +18,10 @@ internal static class EquipmentTests
             Equal(Base, character.BaseStats);
             Check(character.TryEquip(EquipmentSlot.Head, PrototypeEquipment.ClothCap), "cap equipped");
             Check(character.TryEquip(EquipmentSlot.Accessory, PrototypeEquipment.CopperCharm), "charm equipped");
-            Equal(Base with { MaxHp = 85, Strength = 15, Defense = 13 }, character.EffectiveStats);
+            Equal(Base.With(StatId.MaxHp, 85)
+                    .With(StatId.Strength, 15)
+                    .With(StatId.PhysicalDefense, 13),
+                character.EffectiveStats);
             Equal(80, character.Hp); // Extra maximum HP grants no healing.
         }),
         ("Unequip restores a stat and replacement never stacks the previous slot item", () =>
@@ -47,7 +50,8 @@ internal static class EquipmentTests
         {
             var character = new CharacterPreparation(Base, hp: 40, mp: 5);
             var original = character.Loadout;
-            Equal(Base with { Strength = 15 }, character.Preview(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword));
+            Equal(Base.With(StatId.Strength, 15),
+                character.Preview(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword));
             Equal(Base, character.EffectiveStats);
             Equal(40, character.Hp); Equal(5, character.Mp);
             var changed = original.With(EquipmentSlot.Weapon, PrototypeEquipment.WoodenSword);
@@ -91,7 +95,9 @@ internal static class EquipmentTests
             Check(character.TryEquip(EquipmentSlot.Accessory, PrototypeEquipment.CopperCharm), "charm");
             var template = Scenario.Setup(Scenario.GoldenSeed);
             var battle = character.BeginBattle(template);
-            Equal(Base with { MaxHp = 85, Strength = 18, Defense = 6 },
+            Equal(Base.With(StatId.MaxHp, 85)
+                    .With(StatId.Strength, 18)
+                    .With(StatId.PhysicalDefense, 6),
                 battle.Read(0).EffectiveStats);
             Equal(40, battle.Read(0).Hp); Equal(5, battle.Read(0).Mp);
             Equal(Base, template.Actors[0].InitialStats);

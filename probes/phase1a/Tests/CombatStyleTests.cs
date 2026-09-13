@@ -76,22 +76,30 @@ internal static class CombatStyleTests
         ("Style Shift attenuates positive stance magnitudes but keeps negatives whole", () =>
         {
             var stats = new CharacterStats(500, 200, 100, 100, 100, 100, 100);
-            Equal(stats with { Strength = 120, Defense = 80 },
+            Equal(stats.With(StatId.Strength, 120).With(StatId.PhysicalDefense, 80),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.SwordGod.Stance, shifted: false));
-            Equal(stats with { Strength = 85, Defense = 120, Resistance = 115 },
+            Equal(stats.With(StatId.Strength, 85)
+                    .With(StatId.PhysicalDefense, 120)
+                    .With(StatId.MagicalDefense, 115),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.WaterGod.Stance, shifted: false));
-            Equal(stats with { Strength = 110, Defense = 90, Resistance = 110 },
+            Equal(stats.With(StatId.Strength, 110)
+                    .With(StatId.PhysicalDefense, 90)
+                    .With(StatId.MagicalDefense, 110),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.NorthGod.Stance, shifted: false));
-            Equal(stats with { Strength = 117, Defense = 80 },
+            Equal(stats.With(StatId.Strength, 117).With(StatId.PhysicalDefense, 80),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.SwordGod.Stance, shifted: true));
-            Equal(stats with { Strength = 85, Defense = 117, Resistance = 113 },
+            Equal(stats.With(StatId.Strength, 85)
+                    .With(StatId.PhysicalDefense, 117)
+                    .With(StatId.MagicalDefense, 113),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.WaterGod.Stance, shifted: true));
-            Equal(stats with { Strength = 109, Defense = 90, Resistance = 109 },
+            Equal(stats.With(StatId.Strength, 109)
+                    .With(StatId.PhysicalDefense, 90)
+                    .With(StatId.MagicalDefense, 109),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.NorthGod.Stance, shifted: true));
         }),

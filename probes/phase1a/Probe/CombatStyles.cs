@@ -134,12 +134,13 @@ public static class CombatStyleRules
     {
         stats.Validate();
         ValidateStance(stance);
-        var result = stats with
-        {
-            Strength = ApplyModifier(stats.Strength, stance.StrengthPercent, shifted),
-            Defense = ApplyModifier(stats.Defense, stance.DefensePercent, shifted),
-            Resistance = ApplyModifier(stats.Resistance, stance.ResistancePercent, shifted)
-        };
+        var result = stats
+            .With(StatId.Strength,
+                ApplyModifier(stats.Strength, stance.StrengthPercent, shifted))
+            .With(StatId.PhysicalDefense,
+                ApplyModifier(stats.Defense, stance.DefensePercent, shifted))
+            .With(StatId.MagicalDefense,
+                ApplyModifier(stats.Resistance, stance.ResistancePercent, shifted));
         result.Validate();
         return result;
     }

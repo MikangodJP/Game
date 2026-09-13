@@ -23,7 +23,11 @@ var tests = new (string Name, Action Run)[]
             Equal(actor.EffectiveStats.MaxMp, actor.MaxMp);
             Equal(actor.MaxMp, actor.Mp);
         }
-        var editedCopy = initial.Hero with { Hp = 1, EffectiveStats = initial.Hero.EffectiveStats with { Strength = 999 } };
+        var editedCopy = initial.Hero with
+        {
+            Hp = 1,
+            EffectiveStats = initial.Hero.EffectiveStats.With(StatId.Strength, 999)
+        };
         Equal(999, editedCopy.EffectiveStats.Strength);
         Equal(initial.Hero, session.View.Hero);
         Equal(log, session.MachineText);

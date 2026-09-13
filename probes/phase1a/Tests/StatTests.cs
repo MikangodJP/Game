@@ -7,6 +7,86 @@ internal static class StatTests
 {
     public static readonly (string Name, Action Run)[] All =
     [
+        ("Expanded stat catalog is complete stable and isolates legacy Agility", () =>
+        {
+            var ids = Enum.GetValues<StatId>().Where(id => id != StatId.Count).ToArray();
+            Equal(15, ids.Length);
+            Check(StatCatalog.Definitions.Select(definition => definition.Id).SequenceEqual(ids),
+                "catalog order must match dense enum order");
+            Equal(15, StatCatalog.Definitions.Select(definition => definition.StableId)
+                .Distinct(StringComparer.Ordinal).Count());
+            Equal(StatId.Dexterity,
+                StatCatalog.Definition(StatId.Dexterity).Id);
+            Check(StatCatalog.TryFromStableId("core:stat.dexterity", out var dexterity) &&
+                dexterity.Id == StatId.Dexterity, "stable ID lookup");
+            Check(!StatCatalog.TryFromStableId("DEX", out _),
+                "display labels must not act as gameplay IDs");
+            Check(StatCatalog.Definitions.Single(definition => definition.CompatibilityOnly).Id ==
+                StatId.LegacyAgility, "only legacy Agility is compatibility-only");
+        }),
+        ("Expanded stats build by ID and immutable copies compare structurally", () =>
+        {
+            var stats = ExpandedStats();
+            Equal(100, stats[StatId.MaxHp]);
+            Equal(20, stats[StatId.MaxMp]);
+            Equal(12, stats[StatId.Strength]);
+            Equal(8, stats[StatId.Dexterity]);
+            Equal(7, stats[StatId.Speed]);
+            Equal(9, stats[StatId.Endurance]);
+            Equal(10, stats[StatId.Constitution]);
+            Equal(11, stats[StatId.Intelligence]);
+            Equal(13, stats[StatId.Reflex]);
+            Equal(6, stats[StatId.Balance]);
+            Equal(5, stats[StatId.PhysicalDefense]);
+            Equal(4, stats[StatId.MagicalDefense]);
+            Equal(3, stats[StatId.Magic]);
+            Equal(2, stats[StatId.MagicDexterity]);
+            Equal(1, stats[StatId.LegacyAgility]);
+
+            var equalCopy = ExpandedStats();
+            Equal(stats, equalCopy);
+            Equal(stats.GetHashCode(), equalCopy.GetHashCode());
+            Check(stats == equalCopy, "equal operators must use all stat values");
+
+            var changed = stats.With(StatId.Dexterity, 99);
+            Equal(8, stats[StatId.Dexterity]);
+            Equal(99, changed[StatId.Dexterity]);
+            Check(stats != changed, "changed immutable copy must not remain equal");
+            Equal(stats, stats.ToBuilder().Build());
+        }),
+        ("Expanded stats reject invalid IDs uninitialized blocks and invalid values", () =>
+        {
+            var stats = ExpandedStats();
+            Throws(() => _ = stats[(StatId)999]);
+            Throws(() => _ = stats[StatId.Count]);
+            Throws(() => stats.With((StatId)999, 1));
+            Throws(() => stats.With(StatId.Count, 1));
+            Throws(() => stats.With(StatId.MaxHp, 0));
+            Throws(() => stats.With(StatId.Strength, -1));
+            Throws(() => default(CharacterStats).Validate());
+            Throws(() => CharacterStats.Create(_ => { }));
+        }),
+        ("Legacy seven-stat construction maps to one canonical expanded block", () =>
+        {
+            var stats = new CharacterStats(93, 17, 20, 9, 6, 5, 14);
+            Equal(93, stats[StatId.MaxHp]);
+            Equal(17, stats[StatId.MaxMp]);
+            Equal(20, stats[StatId.Strength]);
+            Equal(9, stats[StatId.PhysicalDefense]);
+            Equal(6, stats[StatId.Magic]);
+            Equal(5, stats[StatId.MagicalDefense]);
+            Equal(14, stats[StatId.LegacyAgility]);
+            Equal(stats[StatId.PhysicalDefense], stats.Defense);
+            Equal(stats[StatId.MagicalDefense], stats.Resistance);
+            Equal(stats[StatId.LegacyAgility], stats.Agility);
+            foreach (var id in new[]
+            {
+                StatId.Dexterity, StatId.Speed, StatId.Endurance,
+                StatId.Constitution, StatId.Intelligence, StatId.Reflex,
+                StatId.Balance, StatId.MagicDexterity
+            })
+                Equal(0, stats[id]);
+        }),
         ("Base stats initialize full HP and MP with all seven effective values", () =>
         {
             var stats = new CharacterStats(93, 17, 20, 9, 6, 5, 14);
@@ -28,9 +108,7 @@ internal static class StatTests
             foreach (var invalid in new[]
             {
                 injured with { Hp = 31 }, injured with { Hp = -1 },
-                injured with { Mp = 6 }, injured with { Mp = -1 },
-                injured with { InitialStats = injured.InitialStats with { MaxHp = 0 } },
-                injured with { InitialStats = injured.InitialStats with { Strength = -1 } }
+                injured with { Mp = 6 }, injured with { Mp = -1 }
             })
                 Throws(() => new BattleState(setup with { Actors = setup.Actors.SetItem(0, invalid) }));
         }),
@@ -105,7 +183,8 @@ internal static class StatTests
                  new(OpKind.Damage, new(TargetScope.Self), new(Base: 2), DamageKind: DamageKind.Physical)], new(7, "battle.effect"));
             // Frozen STR 10, current target DEF 8-3 = 5: 2+10-floor(5/2) = 10.
             Equal(90, state.Read(0).Hp);
-            Equal(stats with { Strength = 7, Defense = 5 }, state.Read(0).EffectiveStats);
+            Equal(stats.With(StatId.Strength, 7).With(StatId.PhysicalDefense, 5),
+                state.Read(0).EffectiveStats);
             Equal(stats, before.EffectiveStats);
             Equal(stats, setup.Actors[0].InitialStats);
         }),
@@ -117,7 +196,10 @@ internal static class StatTests
             {
                 Actors = setup.Actors.Select((actor, i) => actor with
                 {
-                    InitialStats = actor.InitialStats with { Magic = 100 + i, Resistance = 200 + i, Agility = 300 - i }
+                    InitialStats = actor.InitialStats
+                        .With(StatId.Magic, 100 + i)
+                        .With(StatId.MagicalDefense, 200 + i)
+                        .With(StatId.LegacyAgility, 300 - i)
                 }).ToImmutableArray()
             };
             var state = new BattleState(altered);
@@ -151,6 +233,23 @@ internal static class StatTests
     private static EncounterSetup Setup(CharacterStats hero, CharacterStats? enemy = null, ulong seed = 7) => new(
         [new("fixture:hero", "hero", Side.Adventurers, hero),
          new("fixture:enemy", null, Side.Monsters, enemy ?? new(300, 0, 0, 0, 0, 0, 0))], seed);
+
+    private static CharacterStats ExpandedStats() => CharacterStats.Create(builder => builder
+        .Set(StatId.MaxHp, 100)
+        .Set(StatId.MaxMp, 20)
+        .Set(StatId.Strength, 12)
+        .Set(StatId.Dexterity, 8)
+        .Set(StatId.Speed, 7)
+        .Set(StatId.Endurance, 9)
+        .Set(StatId.Constitution, 10)
+        .Set(StatId.Intelligence, 11)
+        .Set(StatId.Reflex, 13)
+        .Set(StatId.Balance, 6)
+        .Set(StatId.PhysicalDefense, 5)
+        .Set(StatId.MagicalDefense, 4)
+        .Set(StatId.Magic, 3)
+        .Set(StatId.MagicDexterity, 2)
+        .Set(StatId.LegacyAgility, 1));
 
     private static int StrikeDamage(int strength, int defense, ulong seed)
     {
