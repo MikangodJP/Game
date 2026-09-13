@@ -205,29 +205,6 @@ public static class StatResolver
         return new(ImmutableArray.CreateRange(values));
     }
 
-    public static CharacterStats Resolve(CharacterStats baseStats, int existingWeakness = 0, EquipmentBonuses equipment = default)
-    {
-        baseStats.Validate();
-        ArgumentOutOfRangeException.ThrowIfNegative(existingWeakness);
-        var equipped = Resolve(new(baseStats)
-        {
-            Modifiers = equipment.ToModifiers("probe:compat.equipment"),
-            MinimumBehavior = StatMinimumBehavior.Reject
-        });
-        if (existingWeakness == 0) return equipped;
-        return Resolve(new(equipped)
-        {
-            Modifiers =
-            [
-                new(StatId.Strength, StatModifierOperation.FlatAdd,
-                    -existingWeakness, "probe:status.weakened"),
-                new(StatId.PhysicalDefense, StatModifierOperation.FlatAdd,
-                    -existingWeakness, "probe:status.weakened")
-            ],
-            MinimumBehavior = StatMinimumBehavior.Clamp
-        });
-    }
-
     private static long DivideRoundMidpointAwayFromZero(long numerator, long denominator)
     {
         var quotient = Math.DivRem(numerator, denominator, out var remainder);
@@ -243,7 +220,8 @@ public static class PhysicalDamage
     {
         // Integral math, with a wider intermediate to prevent silent overflow; no stat cap.
         return checked((int)Math.Max(1L,
-            (long)basePower + attacker.Strength - defender.Defense / 2 + variance));
+            (long)basePower + attacker[StatId.Strength] -
+            defender[StatId.PhysicalDefense] / 2 + variance));
     }
 }
 
@@ -253,6 +231,7 @@ public static class MagicalDamage
     {
         ArgumentOutOfRangeException.ThrowIfNegative(basePower);
         return checked((int)Math.Max(1L,
-            (long)basePower + caster.Magic - target.Resistance / 2));
+            (long)basePower + caster[StatId.Magic] -
+            target[StatId.MagicalDefense] / 2));
     }
 }

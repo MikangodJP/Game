@@ -3,10 +3,113 @@ using Phase1A.Rules;
 
 namespace Phase1A.Styles;
 
-public readonly record struct StanceModifiers(
-    int StrengthPercent = 0,
-    int DefensePercent = 0,
-    int ResistancePercent = 0);
+public readonly struct StanceModifiers : IEquatable<StanceModifiers>
+{
+    private readonly ImmutableArray<int> basisPoints;
+
+    internal StanceModifiers(ImmutableArray<int> basisPoints)
+    {
+        if (basisPoints.IsDefault || basisPoints.Length != (int)StatId.Count)
+            throw new ArgumentException(
+                "Stance modifiers require every StatId slot.", nameof(basisPoints));
+        this.basisPoints = basisPoints;
+        CombatStyleRules.ValidateStance(this);
+    }
+
+    public StanceModifiers(
+        int StrengthPercent = 0,
+        int DefensePercent = 0,
+        int ResistancePercent = 0)
+    {
+        var builder = ImmutableArray.CreateBuilder<int>((int)StatId.Count);
+        builder.Count = (int)StatId.Count;
+        builder[(int)StatId.Strength] = checked(StrengthPercent * 100);
+        builder[(int)StatId.PhysicalDefense] = checked(DefensePercent * 100);
+        builder[(int)StatId.MagicalDefense] = checked(ResistancePercent * 100);
+        basisPoints = builder.MoveToImmutable();
+        CombatStyleRules.ValidateStance(this);
+    }
+
+    public int this[StatId id]
+    {
+        get
+        {
+            var index = (int)StatCatalog.Definition(id).Id;
+            return basisPoints.IsDefault ? 0 : basisPoints[index];
+        }
+    }
+
+    public int StrengthPercent => this[StatId.Strength] / 100;
+    public int DefensePercent => this[StatId.PhysicalDefense] / 100;
+    public int ResistancePercent => this[StatId.MagicalDefense] / 100;
+
+    public static StanceModifiers Create(Action<StanceModifierBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var builder = new StanceModifierBuilder();
+        configure(builder);
+        return builder.Build();
+    }
+
+    internal ImmutableArray<StatModifier> ToModifiers(
+        string sourceId,
+        bool shifted)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+            throw new ArgumentException("Style source ID must not be blank.", nameof(sourceId));
+        CombatStyleRules.ValidateStance(this);
+        var result = ImmutableArray.CreateBuilder<StatModifier>();
+        foreach (var definition in StatCatalog.Definitions)
+        {
+            var amount = this[definition.Id];
+            if (amount > 0 && shifted)
+                amount = checked((int)((long)amount * 85 / 100));
+            if (amount != 0)
+                result.Add(new(definition.Id, StatModifierOperation.PercentAdd,
+                    amount, sourceId));
+        }
+        return result.ToImmutable();
+    }
+
+    public bool Equals(StanceModifiers other)
+    {
+        foreach (var definition in StatCatalog.Definitions)
+            if (this[definition.Id] != other[definition.Id]) return false;
+        return true;
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is StanceModifiers other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        foreach (var definition in StatCatalog.Definitions)
+            hash.Add(this[definition.Id]);
+        return hash.ToHashCode();
+    }
+
+    public static bool operator ==(StanceModifiers left, StanceModifiers right) =>
+        left.Equals(right);
+
+    public static bool operator !=(StanceModifiers left, StanceModifiers right) =>
+        !left.Equals(right);
+}
+
+public sealed class StanceModifierBuilder
+{
+    private readonly int[] basisPoints = new int[(int)StatId.Count];
+
+    public StanceModifierBuilder SetBasisPoints(StatId id, int amount)
+    {
+        StatCatalog.Definition(id);
+        basisPoints[(int)id] = amount;
+        return this;
+    }
+
+    public StanceModifiers Build() =>
+        new(ImmutableArray.CreateRange(basisPoints));
+}
 
 public sealed record PhysicalTechniqueDefinition
 {
@@ -134,15 +237,19 @@ public static class CombatStyleRules
     {
         stats.Validate();
         ValidateStance(stance);
-        var result = stats
-            .With(StatId.Strength,
-                ApplyModifier(stats.Strength, stance.StrengthPercent, shifted))
-            .With(StatId.PhysicalDefense,
-                ApplyModifier(stats.Defense, stance.DefensePercent, shifted))
-            .With(StatId.MagicalDefense,
-                ApplyModifier(stats.Resistance, stance.ResistancePercent, shifted));
-        result.Validate();
-        return result;
+        return StatResolver.Resolve(new StatResolutionRequest(stats)
+        {
+            Modifiers = stance.ToModifiers("probe:style.compat", shifted),
+            MinimumBehavior = StatMinimumBehavior.Clamp
+        });
+    }
+
+    public static ImmutableArray<StatModifier> ModifiersFor(
+        CombatStyleDefinition style,
+        bool shifted)
+    {
+        ArgumentNullException.ThrowIfNull(style);
+        return style.Stance.ToModifiers(style.Id, shifted);
     }
 
     public static int HitChanceMillionths(
@@ -166,19 +273,11 @@ public static class CombatStyleRules
 
     internal static void ValidateStance(StanceModifiers stance)
     {
-        if (stance.StrengthPercent <= -100 || stance.DefensePercent <= -100 ||
-            stance.ResistancePercent <= -100)
-            throw new ArgumentOutOfRangeException(
-                nameof(stance), "A stance cannot reduce a stat by 100% or more.");
-    }
-
-    private static int ApplyModifier(int value, int percent, bool shifted)
-    {
-        var basisPoints = checked((long)percent *
-            (percent > 0 && shifted ? 85 : 100));
-        var factor = checked(10_000L + basisPoints);
-        var numerator = checked((long)value * factor);
-        return checked((int)((numerator + 5_000L) / 10_000L));
+        foreach (var definition in StatCatalog.Definitions)
+            if (stance[definition.Id] <= -10_000)
+                throw new ArgumentOutOfRangeException(
+                    nameof(stance),
+                    "A stance cannot reduce a stat by 100% or more.");
     }
 }
 
@@ -189,7 +288,9 @@ public static class PrototypeCombatStyles
         "剣神流",
         "Sword God Style",
         "SWORD GOD",
-        new(StrengthPercent: 20, DefensePercent: -20),
+        StanceModifiers.Create(builder => builder
+            .SetBasisPoints(StatId.Strength, 2_000)
+            .SetBasisPoints(StatId.PhysicalDefense, -2_000)),
         [
             new("probe:technique.sword-god.straight-slash", "STRAIGHT SLASH",
                 "probe:style.sword-god", 110, 100,
@@ -204,7 +305,10 @@ public static class PrototypeCombatStyles
         "水神流",
         "Water God Style",
         "WATER GOD",
-        new(StrengthPercent: -15, DefensePercent: 20, ResistancePercent: 15),
+        StanceModifiers.Create(builder => builder
+            .SetBasisPoints(StatId.Strength, -1_500)
+            .SetBasisPoints(StatId.PhysicalDefense, 2_000)
+            .SetBasisPoints(StatId.MagicalDefense, 1_500)),
         [
             new("probe:technique.water-god.steady-cut", "STEADY CUT",
                 "probe:style.water-god", 90, 110,
@@ -219,7 +323,10 @@ public static class PrototypeCombatStyles
         "北神流",
         "North God Style",
         "NORTH GOD",
-        new(StrengthPercent: 10, DefensePercent: -10, ResistancePercent: 10),
+        StanceModifiers.Create(builder => builder
+            .SetBasisPoints(StatId.Strength, 1_000)
+            .SetBasisPoints(StatId.PhysicalDefense, -1_000)
+            .SetBasisPoints(StatId.MagicalDefense, 1_000)),
         [
             new("probe:technique.north-god.adaptive-cut", "ADAPTIVE CUT",
                 "probe:style.north-god", 100, 110,

@@ -85,12 +85,24 @@ public sealed class BattleState : IEffectState
     public ActorSnapshot Read(int actorId)
     {
         var actor = _actors[actorId];
-        var weakness = actor.Status?.FrozenAmount ?? 0;
-        var stats = StatResolver.Resolve(actor.Seed.InitialStats, weakness);
+        var modifiers = ImmutableArray.CreateBuilder<StatModifier>();
+        if (actor.Status is { FrozenAmount: > 0 } status)
+        {
+            modifiers.Add(new(StatId.Strength, StatModifierOperation.FlatAdd,
+                -status.FrozenAmount, status.Definition.Id));
+            modifiers.Add(new(StatId.PhysicalDefense, StatModifierOperation.FlatAdd,
+                -status.FrozenAmount, status.Definition.Id));
+        }
         var style = ReadCombatStyle(actorId);
         if (style is not null)
-            stats = CombatStyleRules.ApplyStance(
-                stats, style.ActiveStyle.Stance, style.Shifted);
+            modifiers.AddRange(CombatStyleRules.ModifiersFor(
+                style.ActiveStyle, style.Shifted));
+        var stats = StatResolver.Resolve(new StatResolutionRequest(
+            actor.Seed.InitialStats)
+        {
+            Modifiers = modifiers.ToImmutable(),
+            MinimumBehavior = StatMinimumBehavior.Clamp
+        });
         return new(actorId, actor.Seed.Side, actor.Hp, actor.Mp,
             stats, actor.Guarding);
     }

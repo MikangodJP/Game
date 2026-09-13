@@ -77,6 +77,25 @@ internal static class MagicTests
             Equal(11, Damage(configuration, casterMagic: 6, targetResistance: 6));
             Equal(8, Damage(configuration, casterMagic: 6, targetResistance: 12));
         }),
+        ("Fireball ignores Intelligence Constitution and MagicDexterity", () =>
+        {
+            var configuration = new ChantlessMagicConfiguration(
+                PrototypeMagic.Fireball, 4, 4);
+            var caster = new CharacterStats(80, 100, 0, 0, 6, 0, 0);
+            var target = new CharacterStats(200, 0, 0, 0, 0, 6, 0);
+            var expandedCaster = caster.ToBuilder()
+                .Set(StatId.Intelligence, 900)
+                .Set(StatId.Constitution, 800)
+                .Set(StatId.MagicDexterity, 700)
+                .Build();
+            var expandedTarget = target.ToBuilder()
+                .Set(StatId.Intelligence, 600)
+                .Set(StatId.Constitution, 500)
+                .Set(StatId.MagicDexterity, 400)
+                .Build();
+            Equal(DamageWithStats(configuration, caster, target),
+                DamageWithStats(configuration, expandedCaster, expandedTarget));
+        }),
         ("The Fireball ability and menu preview share one MP cost", () =>
         {
             var configuration = new ChantlessMagicConfiguration(PrototypeMagic.Fireball, 7, 9);
@@ -116,10 +135,18 @@ internal static class MagicTests
         ChantlessMagicConfiguration configuration,
         int casterMagic = 6,
         int targetResistance = 6)
+        => DamageWithStats(configuration,
+            new(80, 100, 0, 0, casterMagic, 0, 0),
+            new(200, 0, 0, 0, 0, targetResistance, 0));
+
+    private static int DamageWithStats(
+        ChantlessMagicConfiguration configuration,
+        CharacterStats caster,
+        CharacterStats target)
     {
         var setup = new EncounterSetup(ImmutableArray.Create(
-            new ActorSeed("hero", "hero-1", Side.Adventurers, new(80, 100, 0, 0, casterMagic, 0, 0)),
-            new ActorSeed("target", null, Side.Monsters, new(200, 0, 0, 0, 0, targetResistance, 0))), 7);
+            new ActorSeed("hero", "hero-1", Side.Adventurers, caster),
+            new ActorSeed("target", null, Side.Monsters, target)), 7);
         var battle = new BattleState(setup);
         Check(battle.TakeTurn(new(0, FireballMagic.CreateAbility(configuration), 1)), "Fireball accepted");
         return battle.Events.Single(e => e.Kind == "Damaged").Amount;

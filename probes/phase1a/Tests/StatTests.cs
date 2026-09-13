@@ -87,6 +87,15 @@ internal static class StatTests
             })
                 Equal(0, stats[id]);
         }),
+        ("Battle snapshots preserve every expanded stored stat", () =>
+        {
+            var stats = ExpandedStats();
+            var battle = new BattleState(Setup(stats));
+            Equal(stats, battle.Read(0).EffectiveStats);
+            foreach (var definition in StatCatalog.Definitions)
+                Equal(stats[definition.Id],
+                    battle.Read(0).EffectiveStats[definition.Id]);
+        }),
         ("PercentAdd entries sum once and never compound within their layer", () =>
         {
             var starting = new CharacterStats(100, 20, 100, 10, 10, 10, 10);
@@ -339,6 +348,14 @@ internal static class StatTests
                     InitialStats = actor.InitialStats
                         .With(StatId.Magic, 100 + i)
                         .With(StatId.MagicalDefense, 200 + i)
+                        .With(StatId.Dexterity, 210 + i)
+                        .With(StatId.Speed, 220 + i)
+                        .With(StatId.Endurance, 230 + i)
+                        .With(StatId.Constitution, 240 + i)
+                        .With(StatId.Intelligence, 250 + i)
+                        .With(StatId.Reflex, 260 + i)
+                        .With(StatId.Balance, 270 + i)
+                        .With(StatId.MagicDexterity, 280 + i)
                         .With(StatId.LegacyAgility, 300 - i)
                 }).ToImmutableArray()
             };

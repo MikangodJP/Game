@@ -102,6 +102,47 @@ internal static class CombatStyleTests
                     .With(StatId.MagicalDefense, 109),
                 CombatStyleRules.ApplyStance(
                     stats, PrototypeCombatStyles.NorthGod.Stance, shifted: true));
+
+            var shiftedWater = CombatStyleRules.ModifiersFor(
+                PrototypeCombatStyles.WaterGod, shifted: true);
+            Check(shiftedWater.Select(modifier =>
+                    (modifier.Stat, modifier.Operation, modifier.Amount,
+                        modifier.SourceId)).SequenceEqual(new[]
+                {
+                    (StatId.Strength, StatModifierOperation.PercentAdd, -1_500,
+                        PrototypeCombatStyles.WaterGod.Id),
+                    (StatId.PhysicalDefense, StatModifierOperation.PercentAdd, 1_700,
+                        PrototypeCombatStyles.WaterGod.Id),
+                    (StatId.MagicalDefense, StatModifierOperation.PercentAdd, 1_275,
+                        PrototypeCombatStyles.WaterGod.Id)
+                }), "Shifted Style modifiers remain typed and frozen");
+        }),
+        ("Typed stances can address an expanded stat without changing prototype Styles", () =>
+        {
+            var stance = StanceModifiers.Create(builder =>
+                builder.SetBasisPoints(StatId.Reflex, 1_000));
+            Equal(1_000, stance[StatId.Reflex]);
+            Equal(0, stance[StatId.Strength]);
+            var stats = CharacterStats.Create(builder => builder
+                .Set(StatId.MaxHp, 100)
+                .Set(StatId.Reflex, 10));
+            Equal(stats.With(StatId.Reflex, 11),
+                CombatStyleRules.ApplyStance(stats, stance, shifted: false));
+            Equal(stats.With(StatId.Reflex, 11),
+                CombatStyleRules.ApplyStance(stats, stance, shifted: true));
+            Equal(3, PrototypeCombatStyles.All.Length);
+            Check(PrototypeCombatStyles.All.All(style =>
+                    style.Stance[StatId.Reflex] == 0),
+                "test-only stance cannot alter production Styles");
+        }),
+        ("Battle resolves frozen Weakened flats before the active stance percentage", () =>
+        {
+            var battle = StyledBattle(hero:
+                new CharacterStats(500, 20, 100, 100, 100, 100, 100));
+            battle.ApplyStatus(0, Scenario.Weakened, 20, 1);
+            Equal(96, battle.Read(0).EffectiveStats[StatId.Strength]);
+            Equal(64, battle.Read(0).EffectiveStats[StatId.PhysicalDefense]);
+            Equal(20, battle.ReadStatus(0)!.FrozenAmount);
         }),
         ("Technique hit chances use exact independent millionth thresholds", () =>
         {
@@ -415,10 +456,20 @@ internal static class CombatStyleTests
 
             var straight = PrototypeCombatStyles.SwordGod.Techniques[0];
             var seed = FindTechniqueSeed(straight, shifted: false, hit: true);
-            var slow = StyledBattle(seed,
-                new CharacterStats(500, 20, 10, 10, 10, 10, 0));
-            var fast = StyledBattle(seed,
-                new CharacterStats(500, 20, 10, 10, 10, 10, 999));
+            var unusedBaseline = new CharacterStats(500, 20, 10, 10, 10, 10, 0);
+            var unusedAltered = unusedBaseline.ToBuilder()
+                .Set(StatId.Dexterity, 101)
+                .Set(StatId.Speed, 102)
+                .Set(StatId.Endurance, 103)
+                .Set(StatId.Constitution, 104)
+                .Set(StatId.Intelligence, 105)
+                .Set(StatId.Reflex, 106)
+                .Set(StatId.Balance, 107)
+                .Set(StatId.MagicDexterity, 108)
+                .Set(StatId.LegacyAgility, 999)
+                .Build();
+            var slow = StyledBattle(seed, unusedBaseline);
+            var fast = StyledBattle(seed, unusedAltered);
             var slowStart = slow.Events.Length;
             var fastStart = fast.Events.Length;
             Check(slow.TakeTurn(new(0, null, 1, CommandKind.Technique, straight.Id)),
@@ -426,7 +477,8 @@ internal static class CombatStyleTests
             Check(fast.TakeTurn(new(0, null, 1, CommandKind.Technique, straight.Id)),
                 "fast Technique");
             Check(slow.Events.Skip(slowStart).SequenceEqual(fast.Events.Skip(fastStart)),
-                "Agility cannot affect Technique resolution");
+                "unused expanded stats cannot affect Technique resolution");
+            Equal(slow.NextActorId, fast.NextActorId);
         })
     ];
 

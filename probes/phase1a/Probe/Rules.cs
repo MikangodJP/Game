@@ -11,10 +11,10 @@ public enum TargetScope { Selected, Self, Enemies, PriorTargets }
 public readonly record struct ActorSnapshot(
     int Id, Side Side, int Hp, int Mp, CharacterStats EffectiveStats, bool Guarding = false)
 {
-    public int MaxHp => EffectiveStats.MaxHp;
-    public int MaxMp => EffectiveStats.MaxMp;
-    public int Strength => EffectiveStats.Strength;
-    public int Defense => EffectiveStats.Defense;
+    public int MaxHp => EffectiveStats[StatId.MaxHp];
+    public int MaxMp => EffectiveStats[StatId.MaxMp];
+    public int Strength => EffectiveStats[StatId.Strength];
+    public int Defense => EffectiveStats[StatId.PhysicalDefense];
 }
 public readonly record struct OpResult(OpStatus Status, int Amount = 0, int HitCount = 0, bool Killed = false);
 public sealed record StatusDef(string Id, int Duration);
@@ -63,7 +63,8 @@ public static class Op
                             target.EffectiveStats),
                         physicalDamageScaleMillionths),
                     DamageKind.Magical => MagicalDamage.Calculate(magnitude, context.Caster.EffectiveStats, target.EffectiveStats),
-                    DamageKind.Prototype => Math.Max(0, magnitude - target.Defense),
+                    DamageKind.Prototype => Math.Max(0, magnitude -
+                        target.EffectiveStats[StatId.PhysicalDefense]),
                     _ => throw new InvalidOperationException("Unknown probe damage kind.")
                 };
                 if (target.Guarding && amount > 0)
@@ -130,7 +131,8 @@ public static class EffectRunner
                 if (target.Hp > 0 || node.AffectsDead)
                 {
                     var formula = node.Magnitude;
-                    var value = formula.Base + formula.CasterStrength * caster.Strength;
+                    var value = formula.Base + formula.CasterStrength *
+                        caster.EffectiveStats[StatId.Strength];
                     if (formula.PriorNode >= 0) value += formula.PriorAmount * Earlier(formula.PriorNode).Result.Amount;
                     if (formula.Variance > 0) value += rng.NextInclusive(formula.Variance);
                     if (!double.IsFinite(value) || value < 0) throw new InvalidOperationException("Invalid magnitude literal.");
